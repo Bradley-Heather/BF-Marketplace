@@ -14,7 +14,6 @@
 
 module PSTest where
 
-
 import           Control.Monad              hiding (fmap)
 import           Control.Monad.Freer.Extras as Extras
 import           Data.Default               (Default (..))
@@ -28,9 +27,9 @@ import           Plutus.Trace.Emulator      as Emulator
 import           PlutusTx.Prelude
 import           Prelude                    (IO, String, Show (..))
 
-
 import           PropertySale
 
+---------------------------------------------------------------
 -- | To test the Minting Policy and ensure the tokens can only be minted once
 test :: IO ()
 test = runEmulatorTraceIO $ do
@@ -112,6 +111,6 @@ myTrace = do
             callEndpoint @"Interact" h1 Close
             void $ Emulator.waitNSlots 2
 
------------------------------------------------------------------
+-------------------------------------------------------------
 
 -- To Do -- Quickcheck and lenses

@@ -65,9 +65,9 @@ data TradeDatum = Trade Integer | Finished
 PlutusTx.unstableMakeIsData ''TradeDatum
 
 --------------------------------------------------------------------------
--- OnChain code
+-- | OnChain code | --
 
--- | Ensure the Minting policy can only occur once by utilising a eUTXO as parameter
+-- | Ensure the Minting policy can only occur once by utilising a eUTXO as a parameter
 {-# INLINABLE mkPolicy #-}
 mkPolicy :: TxOutRef -> () -> ScriptContext -> Bool
 mkPolicy oref () ctx = traceIfFalse "UTxO not consumed" (any (\i -> txInInfoOutRef i == oref) $ txInfoInputs info)
@@ -89,6 +89,9 @@ curSymbol oref = scriptCurrencySymbol $ policy oref
 {-# INLINABLE lovelaces #-}
 lovelaces :: Value -> Integer
 lovelaces = Ada.getLovelace . Ada.fromValue
+
+---------------------------------------
+-- | State Machine
 
 {-# INLINABLE transition #-}
 transition :: PropertySale -> State TradeDatum -> PSRedeemer -> Maybe (TxConstraints Void Void, State TradeDatum)
@@ -148,7 +151,7 @@ psClient :: PropertySale  -> StateMachineClient TradeDatum PSRedeemer
 psClient ps = mkStateMachineClient $ StateMachineInstance (psStateMachine ps) (psTypedValidator ps)
 
 ---------------------------------------------------------------------------
--- | Offchain Code 
+-- | Offchain Code | --
 
 -- | Mint Property Tokens (Another possible solution...)
 -- mintC :: MintParams -> Contract w s CurrencyError OneShotCurrency
