@@ -18,10 +18,8 @@ import qualified Data.Map                     as Map
 import           Data.Aeson                   (FromJSON, ToJSON)
 import           Data.Monoid                  (Last (..))
 import           Data.Text                    (Text, pack)
-import           Data.Void                    (Void)
 import           GHC.Generics                 (Generic)
 import           Plutus.Contract              as Contract
-import           Plutus.Contracts.Currency
 import           Plutus.Contract.StateMachine
 import qualified PlutusTx
 import           PlutusTx.Prelude             hiding (Semigroup(..), check, unless)
@@ -33,6 +31,11 @@ import           Ledger.Value                 as Value
 import           Prelude                      (Semigroup (..), Show (..), String)
 import           Text.Printf                  (printf)
 import qualified Prelude
+
+data MintParams = MintParams
+    { mpTokenName :: !TokenName
+    , mpAmount    :: !Integer
+    } deriving (Show, Generic, ToJSON, FromJSON)
 
 data PropertySale = PropertySale
     { psSeller :: !PubKeyHash
@@ -64,24 +67,22 @@ PlutusTx.unstableMakeIsData ''TradeDatum
 --------------------------------------------------------------------------
 -- OnChain code
 
--- | Ensure the Minting policy can only occur once by utilising a eUTXO 
+-- | Ensure the Minting policy can only occur once by utilising a eUTXO as parameter
 {-# INLINABLE mkPolicy #-}
-mkPolicy :: TxOutRef -> TokenName -> () -> ScriptContext -> Bool
-mkPolicy oref tn () ctx = traceIfFalse "UTxO not consumed" (any (\i -> txInInfoOutRef i == oref) $ txInfoInputs info)
+mkPolicy :: TxOutRef -> () -> ScriptContext -> Bool
+mkPolicy oref () ctx = traceIfFalse "UTxO not consumed" (any (\i -> txInInfoOutRef i == oref) $ txInfoInputs info)
     where
        info :: TxInfo
        info = scriptContextTxInfo ctx  
  
-policy :: TxOutRef -> TokenName -> Scripts.MintingPolicy
-policy oref tn = mkMintingPolicyScript $
-    $$(PlutusTx.compile [|| \oref' tn' -> Scripts.wrapMintingPolicy $ mkPolicy oref' tn' ||])
+policy :: TxOutRef -> Scripts.MintingPolicy
+policy oref = mkMintingPolicyScript $
+    $$(PlutusTx.compile [|| \oref' -> Scripts.wrapMintingPolicy $ mkPolicy oref' ||])
     `PlutusTx.applyCode`
     PlutusTx.liftCode oref
-    `PlutusTx.applyCode`
-    PlutusTx.liftCode tn
 
-curSymbol :: TxOutRef -> TokenName -> CurrencySymbol
-curSymbol oref tn = scriptCurrencySymbol $ policy oref tn
+curSymbol :: TxOutRef -> CurrencySymbol
+curSymbol oref = scriptCurrencySymbol $ policy oref 
 
 ---------------------------------------
 
@@ -97,22 +98,19 @@ transition ps s r = case (stateValue s, stateData s, r) of
                                                     )
     (v, Trade p, AddTokens n)  | n > 0            -> Just ( Constraints.mustBeSignedBy (psSeller ps)
                                                     , State (Trade p) $
-                                                      v                                       <>
-                                                      assetClassValue (psToken ps) n
+                                                      v <> assetClassValue (psToken ps) n
                                                     )
     (v, Trade p, BuyTokens n)  | n > 0            -> Just ( mempty
                                                     , State (Trade p) $
-                                                      v                                       <>
-                                                      assetClassValue (psToken ps) (negate n) <>
+                                                      v <> assetClassValue (psToken ps) (negate n) <>
                                                       lovelaceValueOf (n * p)
                                                     )
     (v, Trade p, Withdraw n l) | n >= 0 && l >= 0 -> Just ( Constraints.mustBeSignedBy (psSeller ps)
                                                     , State (Trade p) $
-                                                      v                                       <>
-                                                      assetClassValue (psToken ps) (negate n) <>
+                                                      v <> assetClassValue (psToken ps) (negate n) <>
                                                       lovelaceValueOf (negate l)
                                                     )
-    (v, Trade p, Close)                           -> Just  ( Constraints.mustBeSignedBy (psSeller ps)
+    (_, Trade _, Close)                           -> Just  ( Constraints.mustBeSignedBy (psSeller ps)
                                                     , State Finished mempty
                                                     )
     _                                             -> Nothing
@@ -157,15 +155,15 @@ psClient ps = mkStateMachineClient $ StateMachineInstance (psStateMachine ps) (p
 -- mintC token amt = mapErrorSM (mintContract pkh [(token, amt)])
 
 -- | Mint Property Tokens
-mintPS :: TokenName -> Integer -> Contract w PSMintSchema Text ()
-mintPS tn amt = do
+mintPS :: MintParams -> Contract w PSMintSchema Text ()
+mintPS mp = do
     pk    <- Contract.ownPubKey
     utxos <- utxoAt (pubKeyAddress pk)
     case Map.keys utxos of
         []       -> Contract.logError @String "no utxo found"
         oref : _ -> do
-            let val     = Value.singleton (curSymbol oref tn) tn amt
-                lookups = Constraints.mintingPolicy (policy oref tn) <> Constraints.unspentOutputs utxos
+            let val     = Value.singleton (curSymbol oref) (mpTokenName mp) (mpAmount mp)
+                lookups = Constraints.mintingPolicy (policy oref) <> Constraints.unspentOutputs utxos
                 tx      = Constraints.mustMintValue val <> Constraints.mustSpendPubKeyOutput oref
             ledgerTx <- submitTxConstraintsWith @Void lookups tx
             void $ awaitTxConfirmed $ txId ledgerTx
@@ -188,7 +186,7 @@ startPS token useTT = do
     tell $ Last $ Just ps
     logInfo $ "Started Property Sale " ++ show ps
 
--- | Converst SMContractError from the state machine to a simple text error
+-- | Converts SMContractError from the state machine to a simple text error
 mapErrorSM :: Contract w s SMContractError a -> Contract w s Text a
 mapErrorSM = mapError $ pack . show
 
@@ -202,7 +200,7 @@ interactPS ps r = void $ mapErrorSM $ runStep (psClient ps) r
 
 -- | Define Schemas and EndPoints
 type PSMintSchema =
-        Endpoint "Mint"       (TokenName, Integer)
+        Endpoint "Mint"       MintParams
 type PSStartSchema =
         Endpoint "Start"      (CurrencySymbol, TokenName, Bool)
 type PSUseSchema =
