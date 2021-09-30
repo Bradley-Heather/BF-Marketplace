@@ -31,6 +31,34 @@ import           Prelude                    (IO, String, Show (..))
 
 import           PropertySale
 
+-- | To test the Minting Policy and ensure the tokens can only be minted once
+test :: IO ()
+test = runEmulatorTraceIO $ do
+    let tn = "Seaside View"
+    h1 <- activateContractWallet (Wallet 1) mintEndpoint
+    h2 <- activateContractWallet (Wallet 2) mintEndpoint
+    callEndpoint @"Mint" h1 $ MintParams
+        { mpTokenName = tn
+        , mpAmount    = 555
+        }
+    callEndpoint @"Mint" h2 $ MintParams
+        { mpTokenName = tn
+        , mpAmount    = 444
+        }
+    void $ Emulator.waitNSlots 1
+    callEndpoint @"Mint" h1 $ MintParams
+        { mpTokenName = tn
+        , mpAmount    = -222
+        }
+    void $ Emulator.waitNSlots 1
+    callEndpoint @"Mint" h1 $ MintParams
+        { mpTokenName = tn
+        , mpAmount    = 222
+        }
+    void $ Emulator.waitNSlots 1
+
+----------------------------------------------------------------
+
 runMyTrace :: IO ()
 runMyTrace = runEmulatorTraceIO' def emCfg myTrace
 
@@ -40,6 +68,7 @@ emCfg = EmulatorConfig (Left $ Map.fromList [(Wallet w, v) | w <- [1 .. 3]]) def
     v :: Value
     v = Ada.lovelaceValueOf 1_000_000_000 <> assetClassValue token 1000
 
+
 currency :: CurrencySymbol
 currency = "aa"
 
@@ -47,7 +76,8 @@ name :: TokenName
 name = "A"
 
 token :: AssetClass
-token = AssetClass (currency, name)
+token = AssetClass (currency, name) 
+
 
 myTrace :: EmulatorTrace ()
 myTrace = do
@@ -81,3 +111,7 @@ myTrace = do
 
             callEndpoint @"Interact" h1 Close
             void $ Emulator.waitNSlots 2
+
+-----------------------------------------------------------------
+
+-- To Do -- Quickcheck and lenses

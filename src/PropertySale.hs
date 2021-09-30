@@ -150,9 +150,9 @@ psClient ps = mkStateMachineClient $ StateMachineInstance (psStateMachine ps) (p
 ---------------------------------------------------------------------------
 -- | Offchain Code 
 
--- | Mint Property Tokens
--- mintC :: TokenName -> Integer -> Contract w s CurrencyError OneShotCurrency
--- mintC token amt = mapErrorSM (mintContract pkh [(token, amt)])
+-- | Mint Property Tokens (Another possible solution...)
+-- mintC :: MintParams -> Contract w s CurrencyError OneShotCurrency
+-- mintC mp = mapErrorSM (mintContract pkh [((mpTokenName mp), (mpAmount mp))])
 
 -- | Mint Property Tokens
 mintPS :: MintParams -> Contract w PSMintSchema Text ()
