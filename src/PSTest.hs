@@ -31,6 +31,8 @@ import           PropertySale
 
 ---------------------------------------------------------------
 -- | To test the Minting Policy and ensure the tokens can only be minted once
+
+{-
 test :: IO ()
 test = runEmulatorTraceIO $ do
     let tn = "Seaside View"
@@ -55,6 +57,7 @@ test = runEmulatorTraceIO $ do
         , mpAmount    = 222
         }
     void $ Emulator.waitNSlots 1
+    -}
 
 ----------------------------------------------------------------
 
@@ -65,9 +68,9 @@ emCfg :: EmulatorConfig
 emCfg = EmulatorConfig (Left $ Map.fromList [(Wallet w, v) | w <- [1 .. 3]]) def def
   where
     v :: Value
-    v = Ada.lovelaceValueOf 1_000_000_000 <> assetClassValue token 1000
+    v = Ada.lovelaceValueOf 1_000_000_000 -- <> assetClassValue token 1000
 
-
+{-
 currency :: CurrencySymbol
 currency = "aa"
 
@@ -76,39 +79,42 @@ name = "A"
 
 token :: AssetClass
 token = AssetClass (currency, name) 
-
+-}
 
 myTrace :: EmulatorTrace ()
 myTrace = do
-    h <- activateContractWallet (Wallet 1) startEndpoint
-    callEndpoint @"Start" h (currency, name, True)
+    h1 <- activateContractWallet (Wallet 1) mintEndpoint
+    callEndpoint @"Mint" h1 $ MintParams
+        { mpTokenName = "Seaside Lot 7"
+        , mpAmount    = 900
+        }
     void $ Emulator.waitNSlots 5
-    Last m <- observableState h
+    Last m <- observableState h1
     case m of
         Nothing -> Extras.logError @String "Error starting property sale"
         Just ps -> do
             Extras.logInfo $ "Started Property Sale " ++ show ps
 
-            h1 <- activateContractWallet (Wallet 1) $ useEndpoints ps
-            h2 <- activateContractWallet (Wallet 2) $ useEndpoints ps
-            h3 <- activateContractWallet (Wallet 3) $ useEndpoints ps
+            h2 <- activateContractWallet (Wallet 1) $ useEndpoints ps
+            h3 <- activateContractWallet (Wallet 2) $ useEndpoints ps
+            h4 <- activateContractWallet (Wallet 3) $ useEndpoints ps
 
-            callEndpoint @"Interact" h1 $ SetPrice 1_000_000
+            callEndpoint @"Interact" h2 $ SetPrice 1_000_000
             void $ Emulator.waitNSlots 5
 
-            callEndpoint @"Interact" h1 $ AddTokens 100
+            callEndpoint @"Interact" h2 $ AddTokens 100
             void $ Emulator.waitNSlots 5
 
-            callEndpoint @"Interact" h2 $ BuyTokens 20
+            callEndpoint @"Interact" h3 $ BuyTokens 20
             void $ Emulator.waitNSlots 5
 
-            callEndpoint @"Interact" h3 $ BuyTokens 5
+            callEndpoint @"Interact" h4 $ BuyTokens 5
             void $ Emulator.waitNSlots 5
 
-            callEndpoint @"Interact" h1 $ Withdraw 40 10_000_000
+            callEndpoint @"Interact" h2 $ Withdraw 40 10_000_000
             void $ Emulator.waitNSlots 5
 
-            callEndpoint @"Interact" h1 Close
+            callEndpoint @"Interact" h2 Close
             void $ Emulator.waitNSlots 2
 
 -------------------------------------------------------------

@@ -21,6 +21,7 @@ import           Data.Text                    (Text, pack)
 import           GHC.Generics                 (Generic)
 import           Plutus.Contract              as Contract
 import           Plutus.Contract.StateMachine
+import           Plutus.Contracts.Currency    as Currency
 import qualified PlutusTx
 import           PlutusTx.Prelude             hiding (Semigroup(..), check, unless)
 import           Ledger                       hiding (singleton)
@@ -28,14 +29,27 @@ import           Ledger.Ada                   as Ada
 import           Ledger.Constraints           as Constraints
 import qualified Ledger.Typed.Scripts         as Scripts
 import           Ledger.Value                 as Value
-import           Prelude                      (Semigroup (..), Show (..), String)
-import           Text.Printf                  (printf)
+import           Prelude                      (Semigroup (..), Show (..))
 import qualified Prelude
 
 data MintParams = MintParams
     { mpTokenName :: !TokenName
     , mpAmount    :: !Integer
     } deriving (Show, Generic, ToJSON, FromJSON)
+
+-----------------------------------
+{-
+-- Testing 
+data Marketplace =
+  Marketplace
+    { marketplaceOperator :: PubKeyHash
+    , marketplaceNFTFee   :: Value  
+    } deriving (Show, Generic, ToJSON, FromJSON)
+  
+PlutusTx.makeLift ''Marketplace
+PlutusTx.unstableMakeIsData ''Marketplace
+-}
+------------------------------------
 
 data PropertySale = PropertySale
     { psSeller :: !PubKeyHash
@@ -49,7 +63,7 @@ type Price    = Integer
 type Tokens   = Integer
 type Lovelace = Integer
 
-data PSRedeemer =
+data PSRedeemer =     
       SetPrice  Price -- To Do: use an oracle to determine the price
     | AddTokens Tokens
     | BuyTokens Tokens
@@ -66,25 +80,6 @@ PlutusTx.unstableMakeIsData ''TradeDatum
 
 --------------------------------------------------------------------------
 -- | OnChain code | --
-
--- | Ensure the Minting policy can only occur once by utilising a eUTXO as a parameter
-{-# INLINABLE mkPolicy #-}
-mkPolicy :: TxOutRef -> () -> ScriptContext -> Bool
-mkPolicy oref () ctx = traceIfFalse "UTxO not consumed" (any (\i -> txInInfoOutRef i == oref) $ txInfoInputs info)
-    where
-       info :: TxInfo
-       info = scriptContextTxInfo ctx  
- 
-policy :: TxOutRef -> Scripts.MintingPolicy
-policy oref = mkMintingPolicyScript $
-    $$(PlutusTx.compile [|| \oref' -> Scripts.wrapMintingPolicy $ mkPolicy oref' ||])
-    `PlutusTx.applyCode`
-    PlutusTx.liftCode oref
-
-curSymbol :: TxOutRef -> CurrencySymbol
-curSymbol oref = scriptCurrencySymbol $ policy oref 
-
----------------------------------------
 
 {-# INLINABLE lovelaces #-}
 lovelaces :: Value -> Integer
@@ -153,10 +148,11 @@ psClient ps = mkStateMachineClient $ StateMachineInstance (psStateMachine ps) (p
 ---------------------------------------------------------------------------
 -- | Offchain Code | --
 
--- | Mint Property Tokens (Another possible solution...)
+-- | No Longer necessary
+
 -- mintC :: MintParams -> Contract w s CurrencyError OneShotCurrency
 -- mintC mp = mapErrorSM (mintContract pkh [((mpTokenName mp), (mpAmount mp))])
-
+{-
 -- | Mint Property Tokens
 mintPS :: MintParams -> Contract w PSMintSchema Text ()
 mintPS mp = do
@@ -171,17 +167,20 @@ mintPS mp = do
             ledgerTx <- submitTxConstraintsWith @Void lookups tx
             void $ awaitTxConfirmed $ txId ledgerTx
             Contract.logInfo @String $ printf "forged %s" (show val)
+-}
 
 -------------------------------------
 
--- | Starts the Property Sale by initialising the state machine
-startPS :: AssetClass -> Bool -> Contract (Last PropertySale) s Text ()
-startPS token useTT = do
+-- | Starts the Property Sale by initialising the state machine and minting the required number of tokens using a One Shot policy
+startPS :: MintParams -> Contract (Last PropertySale) s Text ()
+startPS mp = do
     pkh <- pubKeyHash <$> Contract.ownPubKey
-    tt  <- if useTT then Just <$> mapErrorSM getThreadToken else return Nothing
-    let ps = PropertySale
+    minted <- mapError (pack . show) (mintContract pkh [(mpTokenName mp, mpAmount mp)] :: Contract w s CurrencyError OneShotCurrency)
+    tt  <- Just <$> mapErrorSM getThreadToken 
+    let cs = Currency.currencySymbol minted
+        ps = PropertySale
             { psSeller = pkh
-            , psToken  = token
+            , psToken  = AssetClass (cs, mpTokenName mp) 
             , psTT     = tt
             }
         client = psClient ps
@@ -202,24 +201,26 @@ interactPS ps r = void $ mapErrorSM $ runStep (psClient ps) r
 ---------------------------------------
 
 -- | Define Schemas and EndPoints
-type PSMintSchema =
-        Endpoint "Mint"       MintParams
+-- type PSMintSchema =
+--        Endpoint "Mint"       MintParams
 type PSStartSchema =
-        Endpoint "Start"      (CurrencySymbol, TokenName, Bool)
+        Endpoint "Mint"      MintParams
 type PSUseSchema =
         Endpoint "Interact"   PSRedeemer
- 
+
+{- 
 mintEndpoint ::  Contract () PSMintSchema Text ()
 mintEndpoint  = forever
               $ handleError logError
-              $ awaitPromise
-              $ endpoint @"Mint"  $ mintPS           
+              $ awaitPromise:
+              $ endpoint @"Mint"  $ mintPS     
+              -}      
 
-startEndpoint :: Contract (Last PropertySale ) PSStartSchema Text ()
-startEndpoint = forever
+mintEndpoint :: Contract (Last PropertySale ) PSStartSchema Text ()
+mintEndpoint = forever
               $ handleError logError
               $ awaitPromise
-              $ endpoint @"Start" $ \(cs, tn, useTT) -> startPS (AssetClass (cs, tn)) useTT
+              $ endpoint @"Mint" $ startPS 
 
 useEndpoints :: PropertySale  -> Contract () PSUseSchema Text ()
 useEndpoints ps = forever
