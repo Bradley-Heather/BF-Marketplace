@@ -20,7 +20,6 @@ import           Data.Default               (Default (..))
 import qualified Data.Map                   as Map
 import           Data.Monoid                (Last (..))
 import           Ledger
-import           Ledger.Value
 import           Ledger.Ada                 as Ada
 import           Plutus.Contract.Test
 import           Plutus.Trace.Emulator      as Emulator
@@ -29,37 +28,6 @@ import           Prelude                    (IO, String, Show (..))
 
 import           PropertySale
 
----------------------------------------------------------------
--- | To test the Minting Policy and ensure the tokens can only be minted once
-
-{-
-test :: IO ()
-test = runEmulatorTraceIO $ do
-    let tn = "Seaside View"
-    h1 <- activateContractWallet (Wallet 1) mintEndpoint
-    h2 <- activateContractWallet (Wallet 2) mintEndpoint
-    callEndpoint @"Mint" h1 $ MintParams
-        { mpTokenName = tn
-        , mpAmount    = 555
-        }
-    callEndpoint @"Mint" h2 $ MintParams
-        { mpTokenName = tn
-        , mpAmount    = 444
-        }
-    void $ Emulator.waitNSlots 1
-    callEndpoint @"Mint" h1 $ MintParams
-        { mpTokenName = tn
-        , mpAmount    = -222
-        }
-    void $ Emulator.waitNSlots 1
-    callEndpoint @"Mint" h1 $ MintParams
-        { mpTokenName = tn
-        , mpAmount    = 222
-        }
-    void $ Emulator.waitNSlots 1
-    -}
-
-----------------------------------------------------------------
 
 runMyTrace :: IO ()
 runMyTrace = runEmulatorTraceIO' def emCfg myTrace
@@ -68,25 +36,14 @@ emCfg :: EmulatorConfig
 emCfg = EmulatorConfig (Left $ Map.fromList [(Wallet w, v) | w <- [1 .. 3]]) def def
   where
     v :: Value
-    v = Ada.lovelaceValueOf 1_000_000_000 -- <> assetClassValue token 1000
-
-{-
-currency :: CurrencySymbol
-currency = "aa"
-
-name :: TokenName
-name = "A"
-
-token :: AssetClass
-token = AssetClass (currency, name) 
--}
+    v = Ada.lovelaceValueOf 1_000_000_000 
 
 myTrace :: EmulatorTrace ()
 myTrace = do
     h1 <- activateContractWallet (Wallet 1) mintEndpoint
     callEndpoint @"Mint" h1 $ MintParams
         { mpTokenName = "Seaside Lot 7"
-        , mpAmount    = 900
+        , mpAmount    = 200
         }
     void $ Emulator.waitNSlots 5
     Last m <- observableState h1
