@@ -14,9 +14,11 @@
 module PropertySale where
 
 import           Control.Monad                hiding (fmap)
+import qualified Data.Map                     as Map
 import           Data.Aeson                   (FromJSON, ToJSON)
 import           Data.Monoid                  (Last (..))
 import           Data.Text                    (Text, pack)
+import           Data.Void                    (Void)
 import           GHC.Generics                 (Generic)
 import           Plutus.Contract              as Contract
 import           Plutus.Contracts.Currency
@@ -27,8 +29,9 @@ import           Ledger                       hiding (singleton)
 import           Ledger.Ada                   as Ada
 import           Ledger.Constraints           as Constraints
 import qualified Ledger.Typed.Scripts         as Scripts
-import           Ledger.Value
-import           Prelude                      (Semigroup (..), Show (..))
+import           Ledger.Value                 as Value
+import           Prelude                      (Semigroup (..), Show (..), String)
+import           Text.Printf                  (printf)
 import qualified Prelude
 
 data PropertySale = PropertySale
@@ -39,15 +42,15 @@ data PropertySale = PropertySale
 
 PlutusTx.makeLift ''PropertySale
 
-type Tokens = Integer
-
+type Price    = Integer
+type Tokens   = Integer
 type Lovelace = Integer
 
 data PSRedeemer =
-      SetPrice Integer -- To Do: use an oracle to determine the price
+      SetPrice  Price -- To Do: use an oracle to determine the price
     | AddTokens Tokens
     | BuyTokens Tokens
-    | Withdraw Tokens Lovelace
+    | Withdraw  Tokens Lovelace
     | Close
     deriving (Show, Generic, FromJSON, ToJSON, Prelude.Eq)
 
@@ -60,6 +63,27 @@ PlutusTx.unstableMakeIsData ''TradeDatum
 
 --------------------------------------------------------------------------
 -- OnChain code
+
+-- | Ensure the Minting policy can only occur once by utilising a eUTXO 
+{-# INLINABLE mkPolicy #-}
+mkPolicy :: TxOutRef -> TokenName -> () -> ScriptContext -> Bool
+mkPolicy oref tn () ctx = traceIfFalse "UTxO not consumed" (any (\i -> txInInfoOutRef i == oref) $ txInfoInputs info)
+    where
+       info :: TxInfo
+       info = scriptContextTxInfo ctx  
+ 
+policy :: TxOutRef -> TokenName -> Scripts.MintingPolicy
+policy oref tn = mkMintingPolicyScript $
+    $$(PlutusTx.compile [|| \oref' tn' -> Scripts.wrapMintingPolicy $ mkPolicy oref' tn' ||])
+    `PlutusTx.applyCode`
+    PlutusTx.liftCode oref
+    `PlutusTx.applyCode`
+    PlutusTx.liftCode tn
+
+curSymbol :: TxOutRef -> TokenName -> CurrencySymbol
+curSymbol oref tn = scriptCurrencySymbol $ policy oref tn
+
+---------------------------------------
 
 {-# INLINABLE lovelaces #-}
 lovelaces :: Value -> Integer
@@ -132,10 +156,22 @@ psClient ps = mkStateMachineClient $ StateMachineInstance (psStateMachine ps) (p
 -- mintC :: TokenName -> Integer -> Contract w s CurrencyError OneShotCurrency
 -- mintC token amt = mapErrorSM (mintContract pkh [(token, amt)])
 
+-- | Mint Property Tokens
+mintPS :: TokenName -> Integer -> Contract w PSMintSchema Text ()
+mintPS tn amt = do
+    pk    <- Contract.ownPubKey
+    utxos <- utxoAt (pubKeyAddress pk)
+    case Map.keys utxos of
+        []       -> Contract.logError @String "no utxo found"
+        oref : _ -> do
+            let val     = Value.singleton (curSymbol oref tn) tn amt
+                lookups = Constraints.mintingPolicy (policy oref tn) <> Constraints.unspentOutputs utxos
+                tx      = Constraints.mustMintValue val <> Constraints.mustSpendPubKeyOutput oref
+            ledgerTx <- submitTxConstraintsWith @Void lookups tx
+            void $ awaitTxConfirmed $ txId ledgerTx
+            Contract.logInfo @String $ printf "forged %s" (show val)
+
 -------------------------------------
--- | Converst SMContractError from the state machine to a simple text error
-mapErrorSM :: Contract w s SMContractError a -> Contract w s Text a
-mapErrorSM = mapError $ pack . show
 
 -- | Starts the Property Sale by initialising the state machine
 startPS :: AssetClass -> Bool -> Contract (Last PropertySale) s Text ()
@@ -152,21 +188,31 @@ startPS token useTT = do
     tell $ Last $ Just ps
     logInfo $ "Started Property Sale " ++ show ps
 
----------------------------------------
--- | Allows for the interactions SetPrice, AddTokens, BuyTokens, Withdraw and Close    
-interact :: PropertySale  -> PSRedeemer -> Contract w s Text ()
-interact ps r = void $ mapErrorSM $ runStep (psClient ps) r
+-- | Converst SMContractError from the state machine to a simple text error
+mapErrorSM :: Contract w s SMContractError a -> Contract w s Text a
+mapErrorSM = mapError $ pack . show
 
 ---------------------------------------
+
+-- | Allows for the stepping of the state machine with the interactions SetPrice, AddTokens, BuyTokens, Withdraw and Close    
+interactPS :: PropertySale  -> PSRedeemer -> Contract w s Text ()
+interactPS ps r = void $ mapErrorSM $ runStep (psClient ps) r
+
+---------------------------------------
+
 -- | Define Schemas and EndPoints
--- type PSSMintSchema =
---        Endpoint "Mint"      (TokenName, Int)
+type PSMintSchema =
+        Endpoint "Mint"       (TokenName, Integer)
 type PSStartSchema =
         Endpoint "Start"      (CurrencySymbol, TokenName, Bool)
 type PSUseSchema =
         Endpoint "Interact"   PSRedeemer
  
--- mintEndpoint :: 
+mintEndpoint ::  Contract () PSMintSchema Text ()
+mintEndpoint  = forever
+              $ handleError logError
+              $ awaitPromise
+              $ endpoint @"Mint"  $ mintPS           
 
 startEndpoint :: Contract (Last PropertySale ) PSStartSchema Text ()
 startEndpoint = forever
@@ -178,4 +224,4 @@ useEndpoints :: PropertySale  -> Contract () PSUseSchema Text ()
 useEndpoints ps = forever
                 $ handleError logError
                 $ awaitPromise
-                $ endpoint @"Interact"  $ interact ps
+                $ endpoint @"Interact"  $ interactPS ps
