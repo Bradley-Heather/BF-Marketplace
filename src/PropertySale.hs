@@ -39,49 +39,56 @@ data PropertySale = PropertySale
 
 PlutusTx.makeLift ''PropertySale
 
-data TSRedeemer =
-      SetPrice Integer
-    | AddTokens Integer
-    | BuyTokens Integer
-    | Withdraw Integer Integer
+type Tokens = Integer
+
+type Lovelace = Integer
+
+data PSRedeemer =
+      SetPrice Integer -- To Do: use an oracle to determine the price
+    | AddTokens Tokens
+    | BuyTokens Tokens
+    | Withdraw Tokens Lovelace
     | Close
     deriving (Show, Generic, FromJSON, ToJSON, Prelude.Eq)
 
-PlutusTx.unstableMakeIsData ''TSRedeemer
+PlutusTx.unstableMakeIsData ''PSRedeemer
 
 data TradeDatum = Trade Integer | Finished
     deriving Show
 
 PlutusTx.unstableMakeIsData ''TradeDatum
 
+--------------------------------------------------------------------------
+-- OnChain code
+
 {-# INLINABLE lovelaces #-}
 lovelaces :: Value -> Integer
 lovelaces = Ada.getLovelace . Ada.fromValue
 
 {-# INLINABLE transition #-}
-transition :: PropertySale -> State TradeDatum -> TSRedeemer -> Maybe (TxConstraints Void Void, State TradeDatum)
+transition :: PropertySale -> State TradeDatum -> PSRedeemer -> Maybe (TxConstraints Void Void, State TradeDatum)
 transition ps s r = case (stateValue s, stateData s, r) of
-    (v, Trade _, SetPrice p)   | p >= 0           -> Just ( Constraints.mustBeSignedBy (psSeller ts)
+    (v, Trade _, SetPrice p)   | p >= 0           -> Just ( Constraints.mustBeSignedBy (psSeller ps)
                                                     , State (Trade p) v
                                                     )
-    (v, Trade p, AddTokens n)  | n > 0            -> Just ( Constraints.mustBeSignedBy (psSeller ts)
+    (v, Trade p, AddTokens n)  | n > 0            -> Just ( Constraints.mustBeSignedBy (psSeller ps)
                                                     , State (Trade p) $
                                                       v                                       <>
-                                                      assetClassValue (tsToken ts) n
+                                                      assetClassValue (psToken ps) n
                                                     )
     (v, Trade p, BuyTokens n)  | n > 0            -> Just ( mempty
                                                     , State (Trade p) $
                                                       v                                       <>
-                                                      assetClassValue (tsToken ts) (negate n) <>
+                                                      assetClassValue (psToken ps) (negate n) <>
                                                       lovelaceValueOf (n * p)
                                                     )
-    (v, Trade p, Withdraw n l) | n >= 0 && l >= 0 -> Just ( Constraints.mustBeSignedBy (psSeller ts)
+    (v, Trade p, Withdraw n l) | n >= 0 && l >= 0 -> Just ( Constraints.mustBeSignedBy (psSeller ps)
                                                     , State (Trade p) $
                                                       v                                       <>
-                                                      assetClassValue (psToken ts) (negate n) <>
+                                                      assetClassValue (psToken ps) (negate n) <>
                                                       lovelaceValueOf (negate l)
                                                     )
-    (v, Trade p, Close)                           -> Just  ( Constraints.mustBeSignedBy (psSeller ts)
+    (v, Trade p, Close)                           -> Just  ( Constraints.mustBeSignedBy (psSeller ps)
                                                     , State Finished mempty
                                                     )
     _                                             -> Nothing
@@ -91,69 +98,84 @@ final :: TradeDatum -> Bool
 final Finished = True
 final _        = False
 
-{-# INLINABLE tsStateMachine #-}
-psStateMachine :: PropertySale -> StateMachine TradeDatum TSRedeemer
+{-# INLINABLE psStateMachine #-}
+psStateMachine :: PropertySale -> StateMachine TradeDatum PSRedeemer
 psStateMachine ps = mkStateMachine (psTT ps) (transition ps) final -- final sepcifies final state of the state machine
 
-{-# INLINABLE mkTSValidator #-}
-mkTSValidator :: PropertySale -> TradeDatum -> TSRedeemer -> ScriptContext -> Bool
-mkTSValidator = mkValidator . psStateMachine
+{-# INLINABLE mkPSValidator #-}
+mkPSValidator :: PropertySale -> TradeDatum -> PSRedeemer -> ScriptContext -> Bool
+mkPSValidator = mkValidator . psStateMachine
 
 type PS = StateMachine TradeDatum PSRedeemer
 
-tsTypedValidator :: PropertySale -> Scripts.TypedValidator PS
-tsTypedValidator ps = Scripts.mkTypedValidator @PS
-    ($$(PlutusTx.compile [|| mkTSValidator ||]) `PlutusTx.applyCode` PlutusTx.liftCode ps)
+psTypedValidator :: PropertySale -> Scripts.TypedValidator PS
+psTypedValidator ps = Scripts.mkTypedValidator @PS
+    ($$(PlutusTx.compile [|| mkPSValidator ||]) `PlutusTx.applyCode` PlutusTx.liftCode ps)
     $$(PlutusTx.compile [|| wrap ||])
   where
     wrap = Scripts.wrapValidator @TradeDatum @PSRedeemer
 
-tsValidator :: PropertySale  -> Validator
-tsValidator = Scripts.validatorScript . tsTypedValidator
+psValidator :: PropertySale  -> Validator
+psValidator = Scripts.validatorScript . psTypedValidator
 
-tsAddress :: PropertySale  -> Ledger.Address
-tsAddress = scriptAddress . tsValidator
+psAddress :: PropertySale  -> Ledger.Address
+psAddress = scriptAddress . psValidator
 
-tsClient :: PropertySale  -> StateMachineClient TradeDatum TSRedeemer
-tsClient ts = mkStateMachineClient $ StateMachineInstance (tsStateMachine ts) (tsTypedValidator ts)
+-- | Allows for the starting and stepping of the state machine
+psClient :: PropertySale  -> StateMachineClient TradeDatum PSRedeemer
+psClient ps = mkStateMachineClient $ StateMachineInstance (psStateMachine ps) (psTypedValidator ps)
 
-mapErrorSM :: Contract w s SMContractError a -> Contract w s Text a
-mapErrorSM = mapError $ pack . show
+---------------------------------------------------------------------------
+-- | Offchain Code 
 
+-- | Mint Property Tokens
 -- mintC :: TokenName -> Integer -> Contract w s CurrencyError OneShotCurrency
 -- mintC token amt = mapErrorSM (mintContract pkh [(token, amt)])
 
-startTS :: AssetClass -> Bool -> Contract (Last PropertySale) s Text ()
-startTS token useTT = do
+-------------------------------------
+-- | Converst SMContractError from the state machine to a simple text error
+mapErrorSM :: Contract w s SMContractError a -> Contract w s Text a
+mapErrorSM = mapError $ pack . show
+
+-- | Starts the Property Sale by initialising the state machine
+startPS :: AssetClass -> Bool -> Contract (Last PropertySale) s Text ()
+startPS token useTT = do
     pkh <- pubKeyHash <$> Contract.ownPubKey
     tt  <- if useTT then Just <$> mapErrorSM getThreadToken else return Nothing
-    let ts = PropertySale
+    let ps = PropertySale
             { psSeller = pkh
             , psToken  = token
             , psTT     = tt
             }
-        client = tsClient ts
+        client = psClient ps
     void $ mapErrorSM $ runInitialise client (Trade 0) mempty
-    tell $ Last $ Just ts
-    logInfo $ "started token sale " ++ show ts
+    tell $ Last $ Just ps
+    logInfo $ "Started Property Sale " ++ show ps
 
-interact :: PropertySale  -> TSRedeemer -> Contract w s Text ()
-interact ts r = void $ mapErrorSM $ runStep (tsClient ts) r
+---------------------------------------
+-- | Allows for the interactions SetPrice, AddTokens, BuyTokens, Withdraw and Close    
+interact :: PropertySale  -> PSRedeemer -> Contract w s Text ()
+interact ps r = void $ mapErrorSM $ runStep (psClient ps) r
 
-type TSStartSchema =
-        Endpoint "start"      (CurrencySymbol, TokenName, Bool)
-type TSUseSchema =
-        Endpoint "interact"   TSRedeemer
+---------------------------------------
+-- | Define Schemas and EndPoints
+-- type PSSMintSchema =
+--        Endpoint "Mint"      (TokenName, Int)
+type PSStartSchema =
+        Endpoint "Start"      (CurrencySymbol, TokenName, Bool)
+type PSUseSchema =
+        Endpoint "Interact"   PSRedeemer
  
+-- mintEndpoint :: 
 
-startEndpoint :: Contract (Last PropertySale ) TSStartSchema Text ()
+startEndpoint :: Contract (Last PropertySale ) PSStartSchema Text ()
 startEndpoint = forever
               $ handleError logError
               $ awaitPromise
-              $ endpoint @"start" $ \(cs, tn, useTT) -> startTS (AssetClass (cs, tn)) useTT
+              $ endpoint @"Start" $ \(cs, tn, useTT) -> startPS (AssetClass (cs, tn)) useTT
 
-useEndpoints :: PropertySale  -> Contract () TSUseSchema Text ()
-useEndpoints ts = forever
+useEndpoints :: PropertySale  -> Contract () PSUseSchema Text ()
+useEndpoints ps = forever
                 $ handleError logError
                 $ awaitPromise
-                $ endpoint @"interact"  $ interact ts
+                $ endpoint @"Interact"  $ interact ps
