@@ -28,7 +28,8 @@ import qualified Ledger.Value                        as Value
 
 import           Plutus.Contract
 import           Plutus.PAB.Effects.Contract         (ContractEffect (..))
-import           Plutus.PAB.Effects.Contract.Builtin (Builtin, SomeBuiltin (..), endpointsToSchemas, handleBuiltin)
+import           Plutus.PAB.Effects.Contract.Builtin (Builtin, SomeBuiltin (..))
+import qualified Plutus.PAB.Effects.Contract.Builtin as Builtin
 import           Plutus.PAB.Monitoring.PABLogMsg     (PABMultiAgentMsg)
 import           Plutus.PAB.Simulator                (SimulatorEffectHandlers)
 import qualified Plutus.PAB.Simulator                as Simulator
@@ -40,28 +41,45 @@ import           Wallet.Emulator.Types               (Wallet (..), walletPubKey)
 import           Wallet.Types                        (ContractInstanceId (..))
 
 import qualified PropertySale                        as PS
-import           PropertySale.PAB
+import           PropertySalePAB
+
+wallets :: [Wallet]
+wallets = [Wallet i | i <- [1 .. 5]]
 
 main :: IO ()
 main = void $ Simulator.runSimulationWith handlers $ do
     Simulator.logString @(Builtin PSContracts) "Starting Property Sale PAB webserver. Press enter to exit."
     shutdown <- PAB.Server.startServerDebug
 
-handleOracleContracts ::
-    ( Member (Error PABError) effs
-    , Member (LogMsg (PABMultiAgentMsg (Builtin PSContracts))) effs
-    )
-    => ContractEffect (Builtin PSContracts)
-    ~> Eff effs
-handleOracleContracts = handleBuiltin getSchema getContract where
+    cidMinter <- Simulator.activateContract (Wallet 1) PSMinter
+    liftIO $ writeFile "Minter.cid" $ show $ unContractInstanceId cidMinter
+    ps <- waitForLast cidMinter
+
+    cidSeller <- Simulator.activateContract (Wallet 1) PSMinter
+    liftIO $ writeFile "Seller.cid" $ show $ unContractInstanceId cidSeller
+
+    forM_ wallets $ \w ->
+        when (w /= Wallet 1) $ do
+            cid <- Simulator.activateContract w $ PSBuyer ps
+            liftIO $ writeFile ("Buyer" ++ show (getWallet w) ++ ".cid") $ show $ unContractInstanceId cid
+
+waitForLast :: FromJSON a => ContractInstanceId -> Simulator.Simulation t a
+waitForLast cid =
+    flip Simulator.waitForState cid $ \json -> case fromJSON json of
+        Success (Last (Just x)) -> Just x
+        _                       -> Nothing
+
+instance Builtin.HasDefinitions PSContracts where
     getSchema = \case
-        Mint           -> endpointsToSchemas @PS.PSMintSchema
-        Interact _     -> endpointsToSchemas @PS.PSUseSchema
+        PSMinter        -> Builtin.endpointsToSchemas @PS.PSMintSchema
+        PSSeller _      -> Builtin.endpointsToSchemas @PS.PSSellSchema
+        PSBuyer _       -> Builtin.endpointsToSchemas @PS.PSBuySchema
     getContract = \case
-        Mint        -> SomeBuiltin PS.startPS 
-        Sell        -> SomeBuiltin PS.interactPS 
+        PSMinter        -> SomeBuiltin PS.mintEndpoint
+        PSSeller ps     -> SomeBuiltin $ PS.sellEndpoints ps 
+        PSBuyer ps      -> SomeBuiltin $ PS.buyEndpoint ps
 
 handlers :: SimulatorEffectHandlers (Builtin PSContracts)
 handlers =
-    Simulator.mkSimulatorHandlers @(Builtin PSContracts) def []
-    $ interpret handleOracleContracts
+     Simulator.mkSimulatorHandlers def def
+    $ interpret (Builtin.contractHandler (Builtin.handleBuiltin @PSContracts))

@@ -41,10 +41,7 @@ emCfg = EmulatorConfig (Left $ Map.fromList [(Wallet w, v) | w <- [1 .. 3]]) def
 myTrace :: EmulatorTrace ()
 myTrace = do
     h1 <- activateContractWallet (Wallet 1) mintEndpoint
-    callEndpoint @"Mint" h1 $ MintParams
-        { mpTokenName = "Seaside Lot 7"
-        , mpAmount    = 200
-        }
+    callEndpoint @"Mint" h1 ("Seaside View", 200)
     void $ Emulator.waitNSlots 5
     Last m <- observableState h1
     case m of
@@ -52,23 +49,23 @@ myTrace = do
         Just ps -> do
             Extras.logInfo $ "Started Property Sale " ++ show ps
 
-            h2 <- activateContractWallet (Wallet 1) $ useEndpoints ps
-            h3 <- activateContractWallet (Wallet 2) $ useEndpoints ps
-            h4 <- activateContractWallet (Wallet 3) $ useEndpoints ps
+            h2 <- activateContractWallet (Wallet 1) $ sellEndpoints ps
+            h3 <- activateContractWallet (Wallet 2) $ buyEndpoint ps
+            h4 <- activateContractWallet (Wallet 3) $ buyEndpoint ps
 
-            callEndpoint @"Interact" h2 $ ListProperty 1_000_000 200
+            callEndpoint @"List Property" h2 (1_000_000, 200)
             void $ Emulator.waitNSlots 5
 
-            callEndpoint @"Interact" h3 $ BuyTokens 20
+            callEndpoint @"Buy Tokens" h3 20
             void $ Emulator.waitNSlots 5
 
-            callEndpoint @"Interact" h4 $ BuyTokens 5
+            callEndpoint @"Buy Tokens" h4 5
             void $ Emulator.waitNSlots 5
 
-            callEndpoint @"Interact" h2 $ Withdraw 40 10_000_000
+            callEndpoint @"Withdraw" h2 (40, 10_000_000)
             void $ Emulator.waitNSlots 5
 
-            callEndpoint @"Interact" h2 Close
+            callEndpoint @"Close" h2 ()
             void $ Emulator.waitNSlots 2
 
 -------------------------------------------------------------

@@ -19,7 +19,7 @@ import           Data.Aeson                   (FromJSON, ToJSON)
 import           Data.Monoid                  (Last (..))
 import           Data.Text                    (Text, pack)
 import           GHC.Generics                 (Generic)
-import           Prelude                      (Semigroup (..), Show (..), (<$>))
+import           Prelude                      (Semigroup (..), Show (..), (<$>), uncurry)
 import qualified Prelude
 
 import           Plutus.Contract              as Contract
@@ -34,12 +34,13 @@ import           Ledger.Constraints           as Constraints
 import qualified Ledger.Typed.Scripts         as Scripts
 import           Ledger.Value                 as Value
 
+{-
 data MintParams = 
   MintParams
     { mpTokenName :: !TokenName
     , mpAmount    :: !Integer
-    , mpPrice     :: !Integer
-    } deriving (Show, Generic, ToJSON, FromJSON)
+    } deriving (Show, Generic, ToJSON, FromJSON, Prelude.Eq)
+-}
 
 data PropertySale = 
   PropertySale
@@ -50,6 +51,9 @@ data PropertySale =
 
 PlutusTx.makeLift ''PropertySale
 
+type TotalMint      = Integer
+
+type Price          = Integer
 type TokenAmount    = Integer
 type LovelaceAmount = Integer
 
@@ -139,16 +143,16 @@ psClient ps = mkStateMachineClient $ StateMachineInstance (psStateMachine ps) (p
 -- | Offchain Code | --
 
 -- | Starts the Property Sale by initialising the state machine and minting the required number of tokens using a One Shot policy
-startPS :: MintParams -> Contract (Last PropertySale) s Text ()
-startPS mp = do
+startPS :: TokenName -> TotalMint -> Contract (Last PropertySale) s Text ()
+startPS pn tm = do
     pkh <- pubKeyHash <$> Contract.ownPubKey
     minted <- mapError (pack . show) 
-              (mintContract pkh [(mpTokenName mp, mpAmount mp)] :: Contract w s CurrencyError OneShotCurrency)
+              (mintContract pkh [(pn, tm)] :: Contract w s CurrencyError OneShotCurrency)
     tt  <- Just <$> mapErrorSM getThreadToken 
     let cs = Currency.currencySymbol minted
         ps = PropertySale
             { psSeller = pkh
-            , psToken  = AssetClass (cs, mpTokenName mp) 
+            , psToken  = AssetClass (cs, pn) 
             , psTT     = tt
             }
         client = psClient ps
@@ -161,12 +165,21 @@ mapErrorSM :: Contract w s SMContractError a -> Contract w s Text a
 mapErrorSM = mapError $ pack . show
 
 ---------------------------------------
+-- | allows for the stepping of the State Machine utilising the redeemer
+listProperty :: PropertySale -> Price -> TokenAmount -> Contract w s Text ()
+listProperty ps p n = void $ mapErrorSM $ runStep (psClient ps) $ ListProperty p n
 
-interactPS :: PropertySale  -> PropertySaleRedeemer -> Contract w s Text ()
-interactPS ps r = void $ mapErrorSM $ runStep (psClient ps) r
+buyTokens :: PropertySale -> TokenAmount -> Contract w s Text ()
+buyTokens ps n = void $ mapErrorSM $ runStep (psClient ps) $ BuyTokens n
+
+withdraw :: PropertySale -> TokenAmount -> LovelaceAmount -> Contract w s Text ()
+withdraw ps n l = void $ mapErrorSM $ runStep (psClient ps) $ Withdraw n l
+
+close :: PropertySale -> Contract w s Text ()
+close ps = void $ mapErrorSM $ runStep (psClient ps) Close 
 
 ---------------------------------------
-
+{-
 checkBalance :: Contract w s Text ()
 checkBalance = do 
      pk    <- Contract.ownPubKey 
@@ -174,23 +187,38 @@ checkBalance = do
      let v = mconcat$ Map.elems $ txOutValue . txOutTxOut <$> utxos
      logInfo @String $ "Current balance: " ++ show (Value.flattenValue v)
      return v
+-}
 
 type PSMintSchema =
-        Endpoint "Mint"       MintParams
-type PSUseSchema =
-        Endpoint "Interact"   PropertySaleRedeemer
-  
+        Endpoint "Mint"           (TokenName, TotalMint)
+type PSSellSchema =
+        Endpoint "List Property"  (Price, TokenAmount)
+    .\/ Endpoint "Withdraw"       (TokenAmount, LovelaceAmount)
+    .\/ Endpoint "Close"          ()
+type PSBuySchema =  
+        Endpoint "Buy Tokens"     TokenAmount
 
 mintEndpoint :: Contract (Last PropertySale ) PSMintSchema Text ()
 mintEndpoint = forever
               $ handleError logError
               $ awaitPromise
-              $ endpoint @"Mint" $ startPS 
+              $ endpoint @"Mint" $ uncurry startPS
 
-useEndpoints :: PropertySale  -> Contract () PSUseSchema Text ()
-useEndpoints ps = forever
+sellEndpoints :: PropertySale  -> Contract () PSSellSchema Text ()
+sellEndpoints ps = forever
                 $ handleError logError
                 $ awaitPromise
-                $ endpoint @"Interact"  $ interactPS ps
+                $ listProperty' `select` withdraw' `select` close'
+  where
+    listProperty' = endpoint @"List Property"  $ uncurry $ listProperty ps
+    withdraw'     = endpoint @"Withdraw"       $ uncurry $ withdraw ps
+    close'        = endpoint @"Close"          $ const $ close ps
+
+buyEndpoint :: PropertySale  -> Contract () PSBuySchema Text ()
+buyEndpoint ps = forever
+                $ handleError logError
+                $ awaitPromise
+                $ endpoint @"Buy Tokens" $ buyTokens ps
 
 -- | To Do figure out how to incorporate funds check
+

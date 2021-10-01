@@ -10,10 +10,10 @@ import           Data.Text.Prettyprint.Doc (Pretty (..), viaShow)
 import           GHC.Generics              (Generic)
 import           Ledger
 
-import qualified PropertySale               
+import qualified PropertySale              as Prop       
 
-data PSContracts = Mint | Interact PropertySale
-    deriving (Eq, Ord, Show, Generic, FromJSON, ToJSON)
+data PSContracts = PSMinter | PSSeller Prop.PropertySale | PSBuyer Prop.PropertySale
+    deriving (Eq, Show, Generic, FromJSON, ToJSON)
 
 instance Pretty PSContracts where
     pretty = viaShow
