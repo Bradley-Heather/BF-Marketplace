@@ -19,14 +19,14 @@ import           Data.Aeson                   (FromJSON, ToJSON)
 import           Data.Monoid                  (Last (..))
 import           Data.Text                    (Text, pack)
 import           GHC.Generics                 (Generic)
-import           Prelude                      (Semigroup (..), Show (..))
+import           Prelude                      (Semigroup (..), Show (..), (<$>))
 import qualified Prelude
 
 import           Plutus.Contract              as Contract
 import           Plutus.Contract.StateMachine
 import           Plutus.Contracts.Currency    as Currency
 import qualified PlutusTx
-import           PlutusTx.Prelude             hiding (Semigroup(..), check, unless)
+import           PlutusTx.Prelude             hiding (Semigroup(..), check, unless, (<$>))
 
 import           Ledger                       hiding (singleton)
 import           Ledger.Ada                   as Ada
@@ -34,13 +34,11 @@ import           Ledger.Constraints           as Constraints
 import qualified Ledger.Typed.Scripts         as Scripts
 import           Ledger.Value                 as Value
 
-import           PropertySaleFunds
--- | To Do - figure out how to incorporate funds check
-
 data MintParams = 
   MintParams
     { mpTokenName :: !TokenName
     , mpAmount    :: !Integer
+    , mpPrice     :: !Integer
     } deriving (Show, Generic, ToJSON, FromJSON)
 
 data PropertySale = 
@@ -52,7 +50,6 @@ data PropertySale =
 
 PlutusTx.makeLift ''PropertySale
 
-type Price          = Integer
 type TokenAmount    = Integer
 type LovelaceAmount = Integer
 
@@ -169,6 +166,14 @@ interactPS :: PropertySale  -> PropertySaleRedeemer -> Contract w s Text ()
 interactPS ps r = void $ mapErrorSM $ runStep (psClient ps) r
 
 ---------------------------------------
+
+checkBalance :: Contract w s Text ()
+checkBalance = do 
+     pk    <- Contract.ownPubKey 
+     utxos <- utxoAt $ pubKeyAddress pk 
+     let v = mconcat$ Map.elems $ txOutValue . txOutTxOut <$> utxos
+     logInfo @String $ "Current balance: " ++ show (Value.flattenValue v)
+     return v
 
 type PSMintSchema =
         Endpoint "Mint"       MintParams
