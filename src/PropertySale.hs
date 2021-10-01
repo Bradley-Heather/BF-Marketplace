@@ -37,12 +37,14 @@ import           Ledger.Value                 as Value
 import           PropertySaleFunds
 -- | To Do - figure out how to incorporate funds check
 
-data MintParams = MintParams
+data MintParams = 
+  MintParams
     { mpTokenName :: !TokenName
     , mpAmount    :: !Integer
     } deriving (Show, Generic, ToJSON, FromJSON)
 
-data PropertySale = PropertySale
+data PropertySale = 
+  PropertySale
     { psSeller :: !PubKeyHash
     , psToken  :: !AssetClass
     , psTT     :: !(Maybe ThreadToken)
@@ -83,7 +85,7 @@ transition :: PropertySale -> State TradeDatum -> PSRedeemer -> Maybe (TxConstra
 transition ps s r = case (stateValue s, stateData s, r) of
     (v, Trade _, ListProperty p n) 
       | p >= 0 && n > 0    -> Just ( Constraints.mustBeSignedBy (psSeller ps)
-                                   , State (Trade p) $ v <> 
+                                   , State (Trade p) $ v                     <> 
                                      assetClassValue (psToken ps) n
                                    )
     (v, Trade p, BuyTokens n)  
