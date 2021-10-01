@@ -19,7 +19,7 @@ import           Data.Aeson                   (FromJSON, ToJSON)
 import           Data.Monoid                  (Last (..))
 import           Data.Text                    (Text, pack)
 import           GHC.Generics                 (Generic)
-import           Prelude                      (Semigroup (..), Show (..))
+import           Prelude                      (Semigroup (..), Show (..), uncurry)
 import qualified Prelude
 
 import           Plutus.Contract              as Contract
@@ -34,6 +34,9 @@ import           Ledger.Constraints           as Constraints
 import qualified Ledger.Typed.Scripts         as Scripts
 import           Ledger.Value                 as Value
 
+import           PropertySale.Funds
+-- | To Do - figure out how to incorporate funds check
+
 data MintParams = MintParams
     { mpTokenName :: !TokenName
     , mpAmount    :: !Integer
@@ -47,14 +50,14 @@ data PropertySale = PropertySale
 
 PlutusTx.makeLift ''PropertySale
 
-type Price    = Integer
-type Tokens   = Integer
-type Lovelace = Integer
+type Price          = Integer
+type TokenAmount    = Integer
+type LovelaceAmount = Integer
 
 data PSRedeemer = 
-      ListProperty Price Tokens   
-    | BuyTokens    Tokens
-    | Withdraw     Tokens Lovelace
+      ListProperty Price TokenAmount   
+    | BuyTokens    TokenAmount
+    | Withdraw     TokenAmount LovelaceAmount
     | Close
     deriving (Show, Generic, FromJSON, ToJSON, Prelude.Eq)
 
@@ -159,13 +162,12 @@ mapErrorSM = mapError $ pack . show
 
 ---------------------------------------
 
--- | Allows for the stepping of the state machine with the interactions SetPrice, AddTokens, BuyTokens, Withdraw and Close    
 interactPS :: PropertySale  -> PSRedeemer -> Contract w s Text ()
 interactPS ps r = void $ mapErrorSM $ runStep (psClient ps) r
 
 ---------------------------------------
 
-type PSStartSchema =
+type PSMintSchema =
         Endpoint "Mint"       MintParams
 type PSUseSchema =
         Endpoint "Interact"   PSRedeemer
@@ -182,3 +184,5 @@ useEndpoints ps = forever
                 $ handleError logError
                 $ awaitPromise
                 $ endpoint @"Interact"  $ interactPS ps
+
+-- | To Do figure out how to incorporate funds check
