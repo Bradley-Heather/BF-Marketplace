@@ -21,6 +21,7 @@ import           Plutus.Contract.StateMachine
 import           Plutus.Contracts.Currency    as Currency
 import qualified PlutusTx
 import           PlutusTx.Prelude             hiding (Semigroup(..), check, unless)
+import           Plutus.Types.Percentage      (Percentage)
 
 import           Ledger                       hiding (singleton)
 import           Ledger.Ada                   as Ada
@@ -31,7 +32,7 @@ import           Ledger.Value                 as Value
 data Marketplace =
   Marketplace
     { mpOperator   :: !PubKeyHash
-    , mpSaleFee    :: !Percentage -- percentage for selling Property Tokens
+    , mpSaleFee    :: !Integer
     , mpMintFee    :: !Integer
     , mpSymbol     :: !CurrencySymbol 
     , mpAssetClass :: !AssetClass
@@ -48,8 +49,18 @@ lovelaces = Ada.getLovelace . Ada.fromValue
 data MarketplaceRedeemer = Use 
    deriving Show
 
+
+marketplaceValidator :: Marketplace -> Validator
+marketplaceValidator = Scripts.validatorScript . marketplaceInst
+
+marketplaceAddress :: Marketplace -> Ledger.Address
+marketplaceAddress = scriptAddress . marketplaceValidator
+
 data MarketplaceParams = 
   MarketplaceParams 
-     { mintFee  :: Integer 
-     , saleFee  :: Ratio Integer
+     { mppMintFee    :: !Integer 
+     , mppSaleFee    :: !Integer
      } deriving (Show, Generic, FromJSON, ToJSON, Prelude.Eq)
+
+
+Constraints.mustPayToPubKey mpOperator mpMintFee

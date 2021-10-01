@@ -46,6 +46,7 @@ data PropertySale =
   PropertySale
     { psSeller :: !PubKeyHash
     , psToken  :: !AssetClass
+    , psName   :: !TokenName
     , psTT     :: !(Maybe ThreadToken)
     } deriving (Show, Generic, FromJSON, ToJSON, Prelude.Eq)
 
@@ -90,12 +91,6 @@ transition ps s r = case (stateValue s, stateData s, r) of
                                    , State (Trade p) $ v                     <> 
                                      assetClassValue (psToken ps) n
                                    )
-    (v, Trade p, BuyTokens n)  
-      | n > 0              -> Just ( mempty
-                                   , State (Trade p) $ v                     <> 
-                                     assetClassValue (psToken ps) (negate n) <>
-                                     lovelaceValueOf (n * p)
-                                   )
     (v, Trade p, Withdraw n l) 
       | n >= 0 && l >= 0   -> Just ( Constraints.mustBeSignedBy (psSeller ps)
                                    , State (Trade p) $ v                     <>
@@ -105,6 +100,12 @@ transition ps s r = case (stateValue s, stateData s, r) of
     (_, Trade _, Close)    -> Just ( Constraints.mustBeSignedBy (psSeller ps)
                                    , State Finished mempty
                                    )
+    (v, Trade p, BuyTokens n)  
+      | n > 0              -> Just ( mempty
+                                   , State (Trade p) $ v                     <> 
+                                     assetClassValue (psToken ps) (negate n) <>
+                                     lovelaceValueOf (n * p)
+                                   )                               
     _                      -> Nothing
 
 {-# INLINABLE final #-}
@@ -153,30 +154,39 @@ startPS pn tm = do
         ps = PropertySale
             { psSeller = pkh
             , psToken  = AssetClass (cs, pn) 
+            , psName   = pn
             , psTT     = tt
             }
         client = psClient ps
     void $ mapErrorSM $ runInitialise client (Trade 0) mempty
     tell $ Last $ Just ps
-    logInfo $ "Started Property Sale " ++ show ps
+    logInfo $ "Started property sale " ++ show ps
+    logInfo $ "Property listed as " ++ show pn ++ ". Total tokens distributed " ++ show tm
 
 -- | Converts SMContractError from the state machine to a simple text error
 mapErrorSM :: Contract w s SMContractError a -> Contract w s Text a
 mapErrorSM = mapError $ pack . show
 
 ---------------------------------------
--- | allows for the stepping of the State Machine utilising the redeemer
+-- | Seller Actions
 listProperty :: PropertySale -> Price -> TokenAmount -> Contract w s Text ()
-listProperty ps p n = void $ mapErrorSM $ runStep (psClient ps) $ ListProperty p n
-
-buyTokens :: PropertySale -> TokenAmount -> Contract w s Text ()
-buyTokens ps n = void $ mapErrorSM $ runStep (psClient ps) $ BuyTokens n
+listProperty ps p n = do
+      void $ mapErrorSM $ runStep (psClient ps) $ ListProperty p n
+      logInfo $ show n ++ " " ++ show (psName ps) ++ " tokens listed for " ++ show p
 
 withdraw :: PropertySale -> TokenAmount -> LovelaceAmount -> Contract w s Text ()
 withdraw ps n l = void $ mapErrorSM $ runStep (psClient ps) $ Withdraw n l
 
 close :: PropertySale -> Contract w s Text ()
-close ps = void $ mapErrorSM $ runStep (psClient ps) Close 
+close ps = do
+      void $ mapErrorSM $ runStep (psClient ps) Close 
+      logInfo $ show (psName ps) ++ " sale closed"
+
+-- | Buyer Actions
+buyTokens :: PropertySale -> TokenAmount -> Contract w s Text ()
+buyTokens ps n = do
+      void $ mapErrorSM $ runStep (psClient ps) $ BuyTokens n
+      logInfo $ show n ++ " " ++ show (psName ps) ++ " tokens purchased"
 
 ---------------------------------------
 {-
