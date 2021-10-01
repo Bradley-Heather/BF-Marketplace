@@ -56,14 +56,14 @@ type Price          = Integer
 type TokenAmount    = Integer
 type LovelaceAmount = Integer
 
-data PSRedeemer = 
+data PropertySaleRedeemer = 
       ListProperty Price TokenAmount   
     | BuyTokens    TokenAmount
     | Withdraw     TokenAmount LovelaceAmount
     | Close
     deriving (Show, Generic, FromJSON, ToJSON, Prelude.Eq)
 
-PlutusTx.unstableMakeIsData ''PSRedeemer
+PlutusTx.unstableMakeIsData ''PropertySaleRedeemer
 
 data TradeDatum = Trade Integer | Finished
     deriving Show
@@ -81,7 +81,8 @@ lovelaces = Ada.getLovelace . Ada.fromValue
 -- | State Machine
 
 {-# INLINABLE transition #-}
-transition :: PropertySale -> State TradeDatum -> PSRedeemer -> Maybe (TxConstraints Void Void, State TradeDatum)
+transition :: PropertySale -> State TradeDatum 
+              -> PropertySaleRedeemer -> Maybe (TxConstraints Void Void, State TradeDatum)
 transition ps s r = case (stateValue s, stateData s, r) of
     (v, Trade _, ListProperty p n) 
       | p >= 0 && n > 0    -> Just ( Constraints.mustBeSignedBy (psSeller ps)
@@ -111,21 +112,21 @@ final Finished = True
 final _        = False
 
 {-# INLINABLE psStateMachine #-}
-psStateMachine :: PropertySale -> StateMachine TradeDatum PSRedeemer
+psStateMachine :: PropertySale -> StateMachine TradeDatum PropertySaleRedeemer
 psStateMachine ps = mkStateMachine (psTT ps) (transition ps) final -- final sepcifies final state of the state machine
 
 {-# INLINABLE mkPSValidator #-}
-mkPSValidator :: PropertySale -> TradeDatum -> PSRedeemer -> ScriptContext -> Bool
+mkPSValidator :: PropertySale -> TradeDatum -> PropertySaleRedeemer -> ScriptContext -> Bool
 mkPSValidator = mkValidator . psStateMachine
 
-type PS = StateMachine TradeDatum PSRedeemer
+type PS = StateMachine TradeDatum PropertySaleRedeemer
 
 psTypedValidator :: PropertySale -> Scripts.TypedValidator PS
 psTypedValidator ps = Scripts.mkTypedValidator @PS
     ($$(PlutusTx.compile [|| mkPSValidator ||]) `PlutusTx.applyCode` PlutusTx.liftCode ps)
     $$(PlutusTx.compile [|| wrap ||])
   where
-    wrap = Scripts.wrapValidator @TradeDatum @PSRedeemer
+    wrap = Scripts.wrapValidator @TradeDatum @PropertySaleRedeemer
 
 psValidator :: PropertySale  -> Validator
 psValidator = Scripts.validatorScript . psTypedValidator
@@ -134,7 +135,7 @@ psAddress :: PropertySale  -> Ledger.Address
 psAddress = scriptAddress . psValidator
 
 -- | Allows for the starting and stepping of the state machine
-psClient :: PropertySale  -> StateMachineClient TradeDatum PSRedeemer
+psClient :: PropertySale  -> StateMachineClient TradeDatum PropertySaleRedeemer
 psClient ps = mkStateMachineClient $ StateMachineInstance (psStateMachine ps) (psTypedValidator ps)
 
 ---------------------------------------------------------------------------
@@ -164,7 +165,7 @@ mapErrorSM = mapError $ pack . show
 
 ---------------------------------------
 
-interactPS :: PropertySale  -> PSRedeemer -> Contract w s Text ()
+interactPS :: PropertySale  -> PropertySaleRedeemer -> Contract w s Text ()
 interactPS ps r = void $ mapErrorSM $ runStep (psClient ps) r
 
 ---------------------------------------
@@ -172,7 +173,7 @@ interactPS ps r = void $ mapErrorSM $ runStep (psClient ps) r
 type PSMintSchema =
         Endpoint "Mint"       MintParams
 type PSUseSchema =
-        Endpoint "Interact"   PSRedeemer
+        Endpoint "Interact"   PropertySaleRedeemer
   
 
 mintEndpoint :: Contract (Last PropertySale ) PSMintSchema Text ()
