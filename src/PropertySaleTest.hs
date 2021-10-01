@@ -41,7 +41,10 @@ emCfg = EmulatorConfig (Left $ Map.fromList [(Wallet w, v) | w <- [1 .. 3]]) def
 myTrace :: EmulatorTrace ()
 myTrace = do
     h1 <- activateContractWallet (Wallet 1) mintEndpoint
-    callEndpoint @"Mint" h1 ("Seaside View", 200)
+    callEndpoint @"Mint" h1 MintParams 
+          { mpTokenName = "Seaside View"
+          , mpAmount    = 200
+           }
     void $ Emulator.waitNSlots 5
     Last m <- observableState h1
     case m of

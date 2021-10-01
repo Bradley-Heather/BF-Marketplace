@@ -14,13 +14,14 @@
 module PropertySale where
 
 import           Control.Monad                hiding (fmap)
-import qualified Data.Map                     as Map
+-- import qualified Data.Map                     as Map
 import           Data.Aeson                   (FromJSON, ToJSON)
 import           Data.Monoid                  (Last (..))
 import           Data.Text                    (Text, pack)
 import           GHC.Generics                 (Generic)
 import           Prelude                      (Semigroup (..), Show (..), (<$>), uncurry)
 import qualified Prelude
+import qualified Schema
 
 import           Plutus.Contract              as Contract
 import           Plutus.Contract.StateMachine
@@ -34,13 +35,14 @@ import           Ledger.Constraints           as Constraints
 import qualified Ledger.Typed.Scripts         as Scripts
 import           Ledger.Value                 as Value
 
-{-
+
 data MintParams = 
   MintParams
     { mpTokenName :: !TokenName
     , mpAmount    :: !Integer
-    } deriving (Show, Generic, ToJSON, FromJSON, Prelude.Eq)
--}
+    } deriving (Show, Generic, ToJSON, FromJSON, Prelude.Eq, Schema.ToSchema)
+
+PlutusTx.makeLift ''MintParams
 
 data PropertySale = 
   PropertySale
@@ -51,8 +53,6 @@ data PropertySale =
     } deriving (Show, Generic, FromJSON, ToJSON, Prelude.Eq)
 
 PlutusTx.makeLift ''PropertySale
-
-type TotalMint      = Integer
 
 type Price          = Integer
 type TokenAmount    = Integer
@@ -144,24 +144,24 @@ psClient ps = mkStateMachineClient $ StateMachineInstance (psStateMachine ps) (p
 -- | Offchain Code | --
 
 -- | Starts the Property Sale by initialising the state machine and minting the required number of tokens using a One Shot policy
-startPS :: TokenName -> TotalMint -> Contract (Last PropertySale) s Text ()
-startPS pn tm = do
+startPS :: MintParams -> Contract (Last PropertySale) s Text ()
+startPS mp = do
     pkh <- pubKeyHash <$> Contract.ownPubKey
     minted <- mapError (pack . show) 
-              (mintContract pkh [(pn, tm)] :: Contract w s CurrencyError OneShotCurrency)
+              (mintContract pkh [(mpTokenName mp, mpAmount mp)] :: Contract w s CurrencyError OneShotCurrency)
     tt  <- Just <$> mapErrorSM getThreadToken 
     let cs = Currency.currencySymbol minted
         ps = PropertySale
             { psSeller = pkh
-            , psToken  = AssetClass (cs, pn) 
-            , psName   = pn
+            , psToken  = AssetClass (cs, mpTokenName mp) 
+            , psName   = mpTokenName mp
             , psTT     = tt
             }
         client = psClient ps
     void $ mapErrorSM $ runInitialise client (Trade 0) mempty
     tell $ Last $ Just ps
     logInfo $ "Started property sale " ++ show ps
-    logInfo $ "Property listed as " ++ show pn ++ ". Total tokens distributed " ++ show tm
+    logInfo $ "Property listed as: " ++ show (mpTokenName mp) ++ ", Total tokens distributed: " ++ show (mpAmount mp)
 
 -- | Converts SMContractError from the state machine to a simple text error
 mapErrorSM :: Contract w s SMContractError a -> Contract w s Text a
@@ -175,7 +175,12 @@ listProperty ps p n = do
       logInfo $ show n ++ " " ++ show (psName ps) ++ " tokens listed for " ++ show p
 
 withdraw :: PropertySale -> TokenAmount -> LovelaceAmount -> Contract w s Text ()
-withdraw ps n l = void $ mapErrorSM $ runStep (psClient ps) $ Withdraw n l
+withdraw ps n l = do
+      void $ mapErrorSM $ runStep (psClient ps) $ Withdraw n l
+      if n > 0 then   
+        logInfo $ show n ++ " " ++ show (psName ps) ++ " tokens withdrawn" 
+      else logInfo $ "No " ++ show (psName ps) ++ " tokens withdrawn"
+      logInfo $ show l ++ " Lovelace withdrawn"
 
 close :: PropertySale -> Contract w s Text ()
 close ps = do
@@ -200,7 +205,7 @@ checkBalance = do
 -}
 
 type PSMintSchema =
-        Endpoint "Mint"           (TokenName, TotalMint)
+        Endpoint "Mint" MintParams
 type PSSellSchema =
         Endpoint "List Property"  (Price, TokenAmount)
     .\/ Endpoint "Withdraw"       (TokenAmount, LovelaceAmount)
@@ -212,7 +217,7 @@ mintEndpoint :: Contract (Last PropertySale ) PSMintSchema Text ()
 mintEndpoint = forever
               $ handleError logError
               $ awaitPromise
-              $ endpoint @"Mint" $ uncurry startPS
+              $ endpoint @"Mint" startPS
 
 sellEndpoints :: PropertySale  -> Contract () PSSellSchema Text ()
 sellEndpoints ps = forever
