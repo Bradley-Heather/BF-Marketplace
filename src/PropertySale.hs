@@ -19,7 +19,7 @@ import           Data.Aeson                   (FromJSON, ToJSON)
 import           Data.Monoid                  (Last (..))
 import           Data.Text                    (Text, pack)
 import           GHC.Generics                 (Generic)
-import           Prelude                      (Semigroup (..), Show (..), uncurry)
+import           Prelude                      (Semigroup (..), Show (..))
 import qualified Prelude
 
 import           Plutus.Contract              as Contract
@@ -34,7 +34,7 @@ import           Ledger.Constraints           as Constraints
 import qualified Ledger.Typed.Scripts         as Scripts
 import           Ledger.Value                 as Value
 
-import           PropertySale.Funds
+import           PropertySaleFunds
 -- | To Do - figure out how to incorporate funds check
 
 data MintParams = MintParams
@@ -173,7 +173,7 @@ type PSUseSchema =
         Endpoint "Interact"   PSRedeemer
   
 
-mintEndpoint :: Contract (Last PropertySale ) PSStartSchema Text ()
+mintEndpoint :: Contract (Last PropertySale ) PSMintSchema Text ()
 mintEndpoint = forever
               $ handleError logError
               $ awaitPromise
