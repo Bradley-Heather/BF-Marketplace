@@ -10,9 +10,9 @@ import           Data.Text.Prettyprint.Doc (Pretty (..), viaShow)
 import           GHC.Generics              (Generic)
 import           Ledger
 
-import qualified PropertySale               as Prop
+import qualified PropertySale               
 
-data PSContracts = Mint | Sell | Buy 
+data PSContracts = Mint | Interact PropertySale
     deriving (Eq, Ord, Show, Generic, FromJSON, ToJSON)
 
 instance Pretty PSContracts where

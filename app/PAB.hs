@@ -49,19 +49,17 @@ main = void $ Simulator.runSimulationWith handlers $ do
 
 handleOracleContracts ::
     ( Member (Error PABError) effs
-    , Member (LogMsg (PABMultiAgentMsg (Builtin OracleContracts))) effs
+    , Member (LogMsg (PABMultiAgentMsg (Builtin PSContracts))) effs
     )
-    => ContractEffect (Builtin OracleContracts)
+    => ContractEffect (Builtin PSContracts)
     ~> Eff effs
 handleOracleContracts = handleBuiltin getSchema getContract where
     getSchema = \case
-        Mint     -> endpointsToSchemas @PS.PSMintSchema
-        Sell     -> endpointsToSchemas @PS.PSSellSchema
-        Buy      -> endpointsToSchemas @PS.PSBuySchema
+        Mint           -> endpointsToSchemas @PS.PSMintSchema
+        Interact _     -> endpointsToSchemas @PS.PSUseSchema
     getContract = \case
-        Mint        -> SomeBuiltin   initContract
-        Sell        -> SomeBuiltin $ Oracle.runOracle $ oracleParams cs
-        Buy         -> SomeBuiltin $ Oracle.swap oracle
+        Mint        -> SomeBuiltin PS.startPS 
+        Sell        -> SomeBuiltin PS.interactPS 
 
 handlers :: SimulatorEffectHandlers (Builtin PSContracts)
 handlers =
