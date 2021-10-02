@@ -19,7 +19,7 @@ import           Data.Aeson                   (FromJSON, ToJSON)
 import           Data.Monoid                  (Last (..))
 import           Data.Text                    (Text, pack)
 import           GHC.Generics                 (Generic)
-import           Prelude                      (Semigroup (..), Show (..), (<$>), uncurry)
+import           Prelude                      (Semigroup (..), Show (..), (<$>))
 import qualified Prelude
 import qualified Schema
 
@@ -49,20 +49,22 @@ data PropertySale =
     { psSeller :: !PubKeyHash
     , psToken  :: !AssetClass
     , psName   :: !TokenName
+    , psAmount :: !Integer
     , psTT     :: !(Maybe ThreadToken)
     } deriving (Show, Generic, FromJSON, ToJSON, Prelude.Eq)
 
 PlutusTx.makeLift ''PropertySale
 
-type Price          = Integer
+type TokenPrice     = Integer
 type TokenAmount    = Integer
-type LovelaceAmount = Integer
+type FundsAmount    = Integer
 
 data PropertySaleRedeemer = 
-      ListProperty Price TokenAmount   
-    | BuyTokens    TokenAmount
-    | Withdraw     TokenAmount LovelaceAmount
+      ListProperty       TokenPrice  
+    | WithdrawTokens     TokenAmount 
+    | WithdrawFunds      FundsAmount
     | Close
+    | BuyTokens          TokenAmount
     deriving (Show, Generic, FromJSON, ToJSON, Prelude.Eq)
 
 PlutusTx.unstableMakeIsData ''PropertySaleRedeemer
@@ -86,17 +88,21 @@ lovelaces = Ada.getLovelace . Ada.fromValue
 transition :: PropertySale -> State TradeDatum 
               -> PropertySaleRedeemer -> Maybe (TxConstraints Void Void, State TradeDatum)
 transition ps s r = case (stateValue s, stateData s, r) of
-    (v, Trade _, ListProperty p n) 
-      | p >= 0 && n > 0    -> Just ( Constraints.mustBeSignedBy (psSeller ps)
+    (v, Trade _, ListProperty p) 
+      | p >= 0             -> Just ( Constraints.mustBeSignedBy (psSeller ps)
                                    , State (Trade p) $ v                     <> 
-                                     assetClassValue (psToken ps) n
+                                     assetClassValue (psToken ps) (psAmount ps)
                                    )
-    (v, Trade p, Withdraw n l) 
-      | n >= 0 && l >= 0   -> Just ( Constraints.mustBeSignedBy (psSeller ps)
+    (v, Trade p, WithdrawTokens n ) 
+      | n >= 0             -> Just ( Constraints.mustBeSignedBy (psSeller ps)
                                    , State (Trade p) $ v                     <>
-                                     assetClassValue (psToken ps) (negate n) <>
-                                     lovelaceValueOf (negate l)
+                                     assetClassValue (psToken ps) (negate n) 
                                    )
+    (v, Trade p, WithdrawFunds f) 
+      | f > 0              -> Just ( Constraints.mustBeSignedBy (psSeller ps)
+                                   , State (Trade p) $ v                     <>
+                                     lovelaceValueOf (negate f)
+                                   )                               
     (_, Trade _, Close)    -> Just ( Constraints.mustBeSignedBy (psSeller ps)
                                    , State Finished mempty
                                    )
@@ -155,6 +161,7 @@ startPS mp = do
             { psSeller = pkh
             , psToken  = AssetClass (cs, mpTokenName mp) 
             , psName   = mpTokenName mp
+            , psAmount = mpAmount mp
             , psTT     = tt
             }
         client = psClient ps
@@ -169,18 +176,22 @@ mapErrorSM = mapError $ pack . show
 
 ---------------------------------------
 -- | Seller Actions
-listProperty :: PropertySale -> Price -> TokenAmount -> Contract w s Text ()
-listProperty ps p n = do
-      void $ mapErrorSM $ runStep (psClient ps) $ ListProperty p n
-      logInfo $ show n ++ " " ++ show (psName ps) ++ " tokens listed for " ++ show p
+listProperty :: PropertySale -> TokenPrice -> Contract w s Text ()
+listProperty ps p = do
+      void $ mapErrorSM $ runStep (psClient ps) $ ListProperty p 
+      logInfo $ show (psAmount ps) ++ " " ++ show (psName ps) ++ " tokens listed for " ++ show p
 
-withdraw :: PropertySale -> TokenAmount -> LovelaceAmount -> Contract w s Text ()
-withdraw ps n l = do
-      void $ mapErrorSM $ runStep (psClient ps) $ Withdraw n l
+withdrawTokens :: PropertySale -> TokenAmount -> Contract w s Text ()
+withdrawTokens ps n = do
+      void $ mapErrorSM $ runStep (psClient ps) $ WithdrawTokens n 
       if n > 0 then   
         logInfo $ show n ++ " " ++ show (psName ps) ++ " tokens withdrawn" 
       else logInfo $ "No " ++ show (psName ps) ++ " tokens withdrawn"
-      logInfo $ show l ++ " Lovelace withdrawn"
+
+withdrawFunds :: PropertySale -> FundsAmount -> Contract w s Text ()
+withdrawFunds ps f = do
+      void $ mapErrorSM $ runStep (psClient ps) $ WithdrawFunds f
+      logInfo $ show f ++ " Funds withdrawn"
 
 close :: PropertySale -> Contract w s Text ()
 close ps = do
@@ -205,13 +216,14 @@ checkBalance = do
 -}
 
 type PSMintSchema =
-        Endpoint "Mint" MintParams
+        Endpoint "Mint"             MintParams
 type PSSellSchema =
-        Endpoint "List Property"  (Price, TokenAmount)
-    .\/ Endpoint "Withdraw"       (TokenAmount, LovelaceAmount)
-    .\/ Endpoint "Close"          ()
+        Endpoint "List Property"    TokenPrice
+    .\/ Endpoint "Withdraw Tokens"  TokenAmount 
+    .\/ Endpoint "Withdraw Funds"   FundsAmount
+    .\/ Endpoint "Close"            ()
 type PSBuySchema =  
-        Endpoint "Buy Tokens"     TokenAmount
+        Endpoint "Buy Tokens"       TokenAmount
 
 mintEndpoint :: Contract (Last PropertySale ) PSMintSchema Text ()
 mintEndpoint = forever
@@ -223,11 +235,12 @@ sellEndpoints :: PropertySale  -> Contract () PSSellSchema Text ()
 sellEndpoints ps = forever
                 $ handleError logError
                 $ awaitPromise
-                $ listProperty' `select` withdraw' `select` close'
+                $ listProperty' `select` withdrawTokens' `select` withdrawFunds' `select` close'
   where
-    listProperty' = endpoint @"List Property"  $ uncurry $ listProperty ps
-    withdraw'     = endpoint @"Withdraw"       $ uncurry $ withdraw ps
-    close'        = endpoint @"Close"          $ const $ close ps
+    listProperty'   = endpoint @"List Property"   $ listProperty ps
+    withdrawTokens' = endpoint @"Withdraw Tokens" $ withdrawTokens ps
+    withdrawFunds'  = endpoint @"Withdraw Funds"  $ withdrawFunds ps
+    close'          = endpoint @"Close"           $ const $ close ps
 
 buyEndpoint :: PropertySale  -> Contract () PSBuySchema Text ()
 buyEndpoint ps = forever

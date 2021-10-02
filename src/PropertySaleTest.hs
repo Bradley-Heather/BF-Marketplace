@@ -56,7 +56,7 @@ myTrace = do
             h3 <- activateContractWallet (Wallet 2) $ buyEndpoint ps
             h4 <- activateContractWallet (Wallet 3) $ buyEndpoint ps
 
-            callEndpoint @"List Property" h2 (1_000_000, 200)
+            callEndpoint @"List Property" h2 1_000_000 
             void $ Emulator.waitNSlots 5
 
             callEndpoint @"Buy Tokens" h3 20
@@ -65,7 +65,7 @@ myTrace = do
             callEndpoint @"Buy Tokens" h4 5
             void $ Emulator.waitNSlots 5
 
-            callEndpoint @"Withdraw" h2 (40, 10_000_000)
+            callEndpoint @"Withdraw Funds" h2 10_000_000
             void $ Emulator.waitNSlots 5
 
             callEndpoint @"Close" h2 ()
