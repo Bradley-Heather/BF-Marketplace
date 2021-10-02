@@ -41,6 +41,7 @@ main = void $ Simulator.runSimulationWith handlers $ do
     shutdown <- PAB.Server.startServerDebug
 
     cidMinter <- Simulator.activateContract (Wallet 1) PSMinter
+    liftIO $ writeFile "Minter.cid" $ show $ unContractInstanceId cidMinter
     ps <- waitForLast cidMinter
 
     cidSeller <- Simulator.activateContract (Wallet 1) $ PSSeller ps
