@@ -72,13 +72,13 @@ myTrace = do
                    callEndpoint @"List Property" h2 10_000_000 
                    void $ Emulator.waitNSlots 5
 
-                   callEndpoint @"Buy Tokens" h3 40
+                   callEndpoint @"Buy Tokens" h3 60
                    void $ Emulator.waitNSlots 5
 
-                   callEndpoint @"Buy Tokens" h4 50
+                   callEndpoint @"Buy Tokens" h4 30
                    void $ Emulator.waitNSlots 5
 
-                   callEndpoint @"Withdraw Funds" h2 10_000_000
+                   callEndpoint @"Withdraw Funds" h2 100_000_000
                    void $ Emulator.waitNSlots 5
 
                    callEndpoint @"Close" h2 ()
@@ -86,6 +86,7 @@ myTrace = do
 
                    callEndpoint @"Buy Tokens" h4 50
                    void $ Emulator.waitNSlots 5
+            
 
 -------------------------------------------------------------
 
