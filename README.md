@@ -53,6 +53,22 @@ Run the executable:
 
 `Cabal run PAB`
 
+## Running the Web Client
+
+Ensure you have go install and the executable is available
+
+Ensure the DApp is running as per above
+
+Open a new terminal and change directory to bora-finance-svc
+
+Run the main:
+
+`go run main.go`
+
+Open a browser and navigate to localhost:9000
+
+Within the browser you can interact with the Marketplace
+
 ## Future Rollouts
 
 - [ ] Automated monthly dividend payouts to all addresses holding relevant 'Property Tokens'
