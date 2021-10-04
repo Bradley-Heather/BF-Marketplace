@@ -84,6 +84,9 @@ myTrace = do
                    callEndpoint @"Close" h2 ()
                    void $ Emulator.waitNSlots 2
 
+                   callEndpoint @"Buy Tokens" h4 50
+                   void $ Emulator.waitNSlots 5
+
 -------------------------------------------------------------
 
 -- To Do -- Quickcheck and lenses

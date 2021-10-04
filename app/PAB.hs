@@ -36,7 +36,10 @@ import qualified PropertySale                        as PS
 import qualified BoraMarket                          as BM
 
 wallets :: [Wallet]
-wallets = [Wallet i | i <- [1 .. 6]]
+wallets = [Wallet i | i <- [1 .. 5]]
+
+boraMarket :: Wallet
+boraMarket = Wallet 6 
 
 bmp :: BM.BoraMarketParams
 bmp = BM.BoraMarketParams
@@ -49,7 +52,7 @@ main = void $ Simulator.runSimulationWith handlers $ do
     Simulator.logString @(Builtin PSContracts) "Starting Property Sale PAB webserver. Press enter to exit."
     shutdown <- PAB.Server.startServerDebug
 
-    cidMarket <- Simulator.activateContract (Wallet 6) BMStart 
+    cidMarket <- Simulator.activateContract boraMarket BMStart 
     liftIO $ writeFile "Market.cid" $ show $ unContractInstanceId cidMarket
     _  <- Simulator.callEndpointOnInstance cidMarket "Start" bmp
     bm <- waitForLast cidMarket 
