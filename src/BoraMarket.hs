@@ -14,26 +14,21 @@
 module BoraMarket where
 
 import           Control.Monad                hiding (fmap)
-import qualified Data.Map                     as Map
 import           Data.Aeson                   (FromJSON, ToJSON)
 import           Data.Monoid                  (Last (..))
 import           Data.Text                    (Text, pack)
 import           GHC.Generics                 (Generic)
-import           Prelude                      (Semigroup (..), Show (..))
+import           Prelude                      (Show (..))
 import qualified Prelude
 import qualified Schema
 
 import           Plutus.Contract              as Contract
-import           Plutus.Contract.StateMachine
 import           Plutus.Contracts.Currency    as Currency
 import qualified PlutusTx
 import           PlutusTx.Prelude             hiding (Semigroup(..), check, unless)
 
 import           Ledger                       hiding (singleton)
 import           Ledger.Ada                   as Ada
-import           Ledger.Constraints           as Constraints
-import qualified Ledger.Typed.Scripts         as Scripts
-import           Ledger.Value                 as Value
 
 data BoraMarket =
   BoraMarket
