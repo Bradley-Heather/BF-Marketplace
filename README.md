@@ -15,7 +15,7 @@ Trusted developers or property owners may mint a fixed number of 'Property Token
 **Users categories** <br />
 Bora Marketplace - Run by the BoraMarket smart contract <br />
 Property developer/owner - Trusted party that is given the permision to mint and list property tokens <br />
-Investor - 
+Investor - Party that purchases property tokens
 
 **Monetization** <br />
 Bora Market currently receives a fee from:
@@ -23,9 +23,35 @@ Bora Market currently receives a fee from:
 Fixed fee for listing a Property <br />
 Fixed fee for the sale of any Property Tokens - _This will ultimately be changed to a percentage_ 
 
-## Available Commands
+## Running the DApp
 
-In the project directory, you can run:
+Clone the The Plutus repository:
+
+`git clone https://github.com/input-output-hk/plutus.git`
+
+check out the correct commit as specified in cabal.project:
+
+`git checkout 2f11c28bd8f6d630daab582255e16d8408075bd7`
+
+Enter a nix-shell inside the Plutus directory:
+
+`nix-shell`
+
+Clone this repository and navigate to its root:
+
+`git clone https://github.com/Bradley-Heather/Bora-Finance-Property-Sale.git`
+
+You may need to update Cabal:
+
+`Cabal update` 
+
+Build the project:
+
+`Cabal build`
+
+Run the executable: 
+
+`Cabal run PAB`
 
 ## Future Rollouts
 
