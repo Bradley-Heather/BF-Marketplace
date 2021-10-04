@@ -8,7 +8,6 @@ module PropertySalePAB
 import           Data.Aeson                (FromJSON, ToJSON)
 import           Data.Text.Prettyprint.Doc (Pretty (..), viaShow)
 import           GHC.Generics              (Generic)
-import           Ledger
 
 import qualified PropertySale              as Prop  
 import qualified BoraMarket                as BM     
