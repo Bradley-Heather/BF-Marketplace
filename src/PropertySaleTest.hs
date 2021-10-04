@@ -27,49 +27,62 @@ import           PlutusTx.Prelude
 import           Prelude                    (IO, String, Show (..))
 
 import           PropertySale
+import           BoraMarket 
 
 
 runMyTrace :: IO ()
 runMyTrace = runEmulatorTraceIO' def emCfg myTrace
 
 emCfg :: EmulatorConfig
-emCfg = EmulatorConfig (Left $ Map.fromList [(Wallet w, v) | w <- [1 .. 3]]) def def
+emCfg = EmulatorConfig (Left $ Map.fromList [(Wallet w, v) | w <- [1 .. 4]]) def def
   where
     v :: Value
     v = Ada.lovelaceValueOf 1_000_000_000 
 
 myTrace :: EmulatorTrace ()
 myTrace = do
-    h1 <- activateContractWallet (Wallet 1) mintEndpoint
-    callEndpoint @"Mint" h1 MintParams 
-          { mpTokenName = "Seaside View"
-          , mpAmount    = 200
+    h <- activateContractWallet (Wallet 4) startEndpoint
+    callEndpoint @"Start" h BoraMarketParams
+           { bmpListFee  = 5_000_000
+           , bmpSaleFee  = 1_000_000
            }
     void $ Emulator.waitNSlots 5
-    Last m <- observableState h1
-    case m of
-        Nothing -> Extras.logError @String "Error starting property sale"
-        Just ps -> do
-            Extras.logInfo $ "Started Property Sale " ++ show ps
+    Last n <- observableState h 
+    case n of 
+      Nothing -> Extras.logError @String "Error starting marketplace"
+      Just marketplace -> do 
+          Extras.logInfo $ "Started marketplace " ++ show marketplace
+          
+          h1 <- activateContractWallet (Wallet 1) $ mintEndpoint marketplace
+          callEndpoint @"Mint" h1 MintParams 
+                { mpTokenName = "Seaside View"
+                , mpAmount    = 200
+                }
+          void $ Emulator.waitNSlots 5
+          Last m <- observableState h1
+          case m of
+              Nothing -> Extras.logError @String "Error starting property sale"
+              Just ps -> do
+                   Extras.logInfo $ "Started Property Sale " ++ show ps
 
-            h2 <- activateContractWallet (Wallet 1) $ sellEndpoints ps
-            h3 <- activateContractWallet (Wallet 2) $ buyEndpoint ps
-            h4 <- activateContractWallet (Wallet 3) $ buyEndpoint ps
+                   h2 <- activateContractWallet (Wallet 1) $ sellEndpoints ps
+                   h3 <- activateContractWallet (Wallet 2) $ buyEndpoint ps
+                   h4 <- activateContractWallet (Wallet 3) $ buyEndpoint ps
 
-            callEndpoint @"List Property" h2 1_000_000 
-            void $ Emulator.waitNSlots 5
+                   callEndpoint @"List Property" h2 10_000_000 
+                   void $ Emulator.waitNSlots 5
 
-            callEndpoint @"Buy Tokens" h3 20
-            void $ Emulator.waitNSlots 5
+                   callEndpoint @"Buy Tokens" h3 40
+                   void $ Emulator.waitNSlots 5
 
-            callEndpoint @"Buy Tokens" h4 5
-            void $ Emulator.waitNSlots 5
+                   callEndpoint @"Buy Tokens" h4 50
+                   void $ Emulator.waitNSlots 5
 
-            callEndpoint @"Withdraw Funds" h2 10_000_000
-            void $ Emulator.waitNSlots 5
+                   callEndpoint @"Withdraw Funds" h2 10_000_000
+                   void $ Emulator.waitNSlots 5
 
-            callEndpoint @"Close" h2 ()
-            void $ Emulator.waitNSlots 2
+                   callEndpoint @"Close" h2 ()
+                   void $ Emulator.waitNSlots 2
 
 -------------------------------------------------------------
 

@@ -10,10 +10,12 @@ import           Data.Text.Prettyprint.Doc (Pretty (..), viaShow)
 import           GHC.Generics              (Generic)
 import           Ledger
 
-import qualified PropertySale              as Prop       
+import qualified PropertySale              as Prop  
+import qualified BoraMarket                as BM     
 
-data PSContracts = PSMinter | PSSeller Prop.PropertySale | PSBuyer Prop.PropertySale
+data PSContracts = BMStart | PSMinter BM.BoraMarket | PSSeller Prop.PropertySale | PSBuyer Prop.PropertySale
     deriving (Eq, Show, Generic, FromJSON, ToJSON)
 
 instance Pretty PSContracts where
     pretty = viaShow
+

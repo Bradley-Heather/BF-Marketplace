@@ -100,6 +100,16 @@
   (major1) == 0 && (major2) <  1 || \
   (major1) == 0 && (major2) == 1 && (minor) <= 0)
 #endif /* MIN_VERSION_plutus_use_cases */
+/* package prettyprinter-1.7.0 */
+#ifndef VERSION_prettyprinter
+#define VERSION_prettyprinter "1.7.0"
+#endif /* VERSION_prettyprinter */
+#ifndef MIN_VERSION_prettyprinter
+#define MIN_VERSION_prettyprinter(major1,major2,minor) (\
+  (major1) <  1 || \
+  (major1) == 1 && (major2) <  7 || \
+  (major1) == 1 && (major2) == 7 && (minor) <= 0)
+#endif /* MIN_VERSION_prettyprinter */
 /* package property-sale-0.1.0.0 */
 #ifndef VERSION_property_sale
 #define VERSION_property_sale "0.1.0.0"

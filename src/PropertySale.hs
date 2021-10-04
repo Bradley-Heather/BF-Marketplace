@@ -35,6 +35,8 @@ import           Ledger.Constraints           as Constraints
 import qualified Ledger.Typed.Scripts         as Scripts
 import           Ledger.Value                 as Value
 
+import           BoraMarket                   as BM 
+
 
 data MintParams = 
   MintParams
@@ -46,11 +48,14 @@ PlutusTx.makeLift ''MintParams
 
 data PropertySale = 
   PropertySale
-    { psSeller :: !PubKeyHash
-    , psToken  :: !AssetClass
-    , psName   :: !TokenName
-    , psAmount :: !Integer
-    , psTT     :: !(Maybe ThreadToken)
+    { psOperator         :: !PubKeyHash
+    , psOperatorListFee  :: !Value
+    , psOperatorSaleFee  :: !Value
+    , psSeller           :: !PubKeyHash
+    , psToken            :: !AssetClass
+    , psName             :: !TokenName
+    , psAmount           :: !Integer
+    , psTT               :: !(Maybe ThreadToken)
     } deriving (Show, Generic, FromJSON, ToJSON, Prelude.Eq)
 
 PlutusTx.makeLift ''PropertySale
@@ -89,7 +94,8 @@ transition :: PropertySale -> State TradeDatum
               -> PropertySaleRedeemer -> Maybe (TxConstraints Void Void, State TradeDatum)
 transition ps s r = case (stateValue s, stateData s, r) of
     (v, Trade _, ListProperty p) 
-      | p >= 0             -> Just ( Constraints.mustBeSignedBy (psSeller ps)
+      | p >= 0             -> Just ( Constraints.mustPayToPubKey (psOperator ps) (psOperatorListFee ps) <>
+                                     Constraints.mustBeSignedBy (psSeller ps)
                                    , State (Trade p) $ v                     <> 
                                      assetClassValue (psToken ps) (psAmount ps)
                                    )
@@ -107,7 +113,7 @@ transition ps s r = case (stateValue s, stateData s, r) of
                                    , State Finished mempty
                                    )
     (v, Trade p, BuyTokens n)  
-      | n > 0              -> Just ( mempty
+      | n > 0              -> Just ( Constraints.mustPayToPubKey (psOperator ps) (psOperatorSaleFee ps)
                                    , State (Trade p) $ v                     <> 
                                      assetClassValue (psToken ps) (negate n) <>
                                      lovelaceValueOf (n * p)
@@ -150,19 +156,22 @@ psClient ps = mkStateMachineClient $ StateMachineInstance (psStateMachine ps) (p
 -- | Offchain Code | --
 
 -- | Starts the Property Sale by initialising the state machine and minting the required number of tokens using a One Shot policy
-startPS :: MintParams -> Contract (Last PropertySale) s Text ()
-startPS mp = do
-    pkh <- pubKeyHash <$> Contract.ownPubKey
+startPS :: BM.BoraMarket -> MintParams -> Contract (Last PropertySale) s Text ()
+startPS bm mp = do
+    pkh <- pubKeyHash <$> ownPubKey
     minted <- mapError (pack . show) 
               (mintContract pkh [(mpTokenName mp, mpAmount mp)] :: Contract w s CurrencyError OneShotCurrency)
     tt  <- Just <$> mapErrorSM getThreadToken 
     let cs = Currency.currencySymbol minted
         ps = PropertySale
-            { psSeller = pkh
-            , psToken  = AssetClass (cs, mpTokenName mp) 
-            , psName   = mpTokenName mp
-            , psAmount = mpAmount mp
-            , psTT     = tt
+            { psOperator         = bmOperator bm
+            , psOperatorListFee  = lovelaceValueOf (bmListFee bm)  
+            , psOperatorSaleFee  = lovelaceValueOf (bmSaleFee bm)
+            , psSeller           = pkh
+            , psToken            = AssetClass (cs, mpTokenName mp) 
+            , psName             = mpTokenName mp
+            , psAmount           = mpAmount mp
+            , psTT               = tt
             }
         client = psClient ps
     void $ mapErrorSM $ runInitialise client (Trade 0) mempty
@@ -200,7 +209,7 @@ close ps = do
 
 -- | Buyer Actions
 buyTokens :: PropertySale -> TokenAmount -> Contract w s Text ()
-buyTokens ps n = do
+buyTokens ps n = do 
       void $ mapErrorSM $ runStep (psClient ps) $ BuyTokens n
       logInfo $ show n ++ " " ++ show (psName ps) ++ " tokens purchased"
 
@@ -214,7 +223,7 @@ checkBalance = do
      logInfo @String $ "Current balance: " ++ show (Value.flattenValue v)
      return v
 -}
-
+          
 type PSMintSchema =
         Endpoint "Mint"             MintParams
 type PSSellSchema =
@@ -225,11 +234,11 @@ type PSSellSchema =
 type PSBuySchema =  
         Endpoint "Buy Tokens"       TokenAmount
 
-mintEndpoint :: Contract (Last PropertySale ) PSMintSchema Text ()
-mintEndpoint = forever
+mintEndpoint :: BM.BoraMarket -> Contract (Last PropertySale) PSMintSchema Text ()
+mintEndpoint bm = forever
               $ handleError logError
               $ awaitPromise
-              $ endpoint @"Mint" startPS
+              $ endpoint @"Mint" $ startPS bm
 
 sellEndpoints :: PropertySale  -> Contract () PSSellSchema Text ()
 sellEndpoints ps = forever

@@ -1,5 +1,6 @@
 {-# LANGUAGE DataKinds          #-}
 {-# LANGUAGE DeriveAnyClass     #-}
+{-# LANGUAGE DeriveGeneric      #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE FlexibleContexts   #-}
 {-# LANGUAGE LambdaCase         #-}
@@ -15,9 +16,11 @@ module Main where
 import           Control.Monad                       (forM_, void, when)
 import           Control.Monad.Freer                 (interpret)
 import           Control.Monad.IO.Class              (MonadIO (..))
-import           Data.Aeson                          (FromJSON, Result (..), fromJSON)
+import           Data.Aeson                          (FromJSON, ToJSON, Result (..), fromJSON)
 import           Data.Default                        (Default (..))
 import           Data.Monoid                         (Last (..))
+import           Data.Text.Prettyprint.Doc           (Pretty (..), viaShow)
+import           GHC.Generics                        (Generic)
 
 import           Plutus.Contract
 import           Plutus.PAB.Effects.Contract.Builtin (Builtin, SomeBuiltin (..))
@@ -30,17 +33,28 @@ import           Wallet.Emulator.Types               (Wallet (..))
 import           Wallet.Types                        (ContractInstanceId (..))
 
 import qualified PropertySale                        as PS
-import           PropertySalePAB
+import qualified BoraMarket                          as BM
 
 wallets :: [Wallet]
-wallets = [Wallet i | i <- [1 .. 5]]
+wallets = [Wallet i | i <- [1 .. 6]]
+
+bmp :: BM.BoraMarketParams
+bmp = BM.BoraMarketParams
+           { BM.bmpListFee  = 5_000_000
+           , BM.bmpSaleFee  = 1_000_000
+           }
 
 main :: IO ()
 main = void $ Simulator.runSimulationWith handlers $ do
     Simulator.logString @(Builtin PSContracts) "Starting Property Sale PAB webserver. Press enter to exit."
     shutdown <- PAB.Server.startServerDebug
 
-    cidMinter <- Simulator.activateContract (Wallet 1) PSMinter
+    cidMarket <- Simulator.activateContract (Wallet 6) BMStart 
+    liftIO $ writeFile "Market.cid" $ show $ unContractInstanceId cidMarket
+    _  <- Simulator.callEndpointOnInstance cidMarket "Start" bmp
+    bm <- waitForLast cidMarket 
+
+    cidMinter <- Simulator.activateContract (Wallet 1) $ PSMinter bm
     liftIO $ writeFile "Minter.cid" $ show $ unContractInstanceId cidMinter
     ps <- waitForLast cidMinter
 
@@ -61,14 +75,22 @@ waitForLast cid =
         Success (Last (Just x)) -> Just x
         _                       -> Nothing
 
+data PSContracts = BMStart | PSMinter BM.BoraMarket | PSSeller PS.PropertySale | PSBuyer PS.PropertySale
+    deriving (Eq, Show, Generic, FromJSON, ToJSON)
+
+instance Pretty PSContracts where
+    pretty = viaShow
+
 instance Builtin.HasDefinitions PSContracts where
-    getDefinitions = [PSMinter]
+    getDefinitions = [BMStart]
     getSchema = \case
-        PSMinter        -> Builtin.endpointsToSchemas @PS.PSMintSchema
+        BMStart         -> Builtin.endpointsToSchemas @BM.BoraMarketSchema
+        PSMinter _      -> Builtin.endpointsToSchemas @PS.PSMintSchema
         PSSeller _      -> Builtin.endpointsToSchemas @PS.PSSellSchema
         PSBuyer _       -> Builtin.endpointsToSchemas @PS.PSBuySchema
     getContract = \case
-        PSMinter        -> SomeBuiltin PS.mintEndpoint
+        BMStart         -> SomeBuiltin BM.startEndpoint
+        PSMinter bm     -> SomeBuiltin $ PS.mintEndpoint bm
         PSSeller ps     -> SomeBuiltin $ PS.sellEndpoints ps 
         PSBuyer ps      -> SomeBuiltin $ PS.buyEndpoint ps
 
