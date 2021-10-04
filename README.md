@@ -55,13 +55,13 @@ Run the executable:
 
 ## Running the Web Client
 
-Ensure you have go install and the executable is available
+Ensure you have go installed and the executable is available
 
 Ensure the DApp is running as per above
 
 Open a new terminal and change directory to bora-finance-svc
 
-Run the main:
+Run the main executable:
 
 `go run main.go`
 
