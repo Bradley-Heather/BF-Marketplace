@@ -43,15 +43,29 @@ Clone this repository and navigate to its root:
 
 You may need to update Cabal:
 
-`Cabal update` 
+`cabal update` 
 
 Build the project:
 
-`Cabal build`
+`cabal build`
 
 Run the executable: 
 
-`Cabal run PAB`
+`cabal run PAB`
+
+## To run the simulator Trace
+
+Start the repl 
+
+`cabal repl`
+
+Load Proprty Sale Test
+
+`:l PropertySaleTest`
+
+Run the trace
+
+`runBoraTrace`
 
 ## Running the Web Client
 
