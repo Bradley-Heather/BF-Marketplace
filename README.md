@@ -23,6 +23,8 @@ Bora Market currently receives a fee from:
 Fixed fee for listing a Property <br />
 Fixed fee for the sale of any Property Tokens - _This will ultimately be changed to a percentage_ 
 
+_**Disclaimer:** This purely an MVP and proof of concept that has not been audited and is not to be used as production code. Fringe cases may well exist._ 
+
 ## Running the DApp
 
 Clone the The Plutus repository:
@@ -43,15 +45,29 @@ Clone this repository and navigate to its root:
 
 You may need to update Cabal:
 
-`Cabal update` 
+`cabal update` 
 
 Build the project:
 
-`Cabal build`
+`cabal build`
 
 Run the executable: 
 
-`Cabal run PAB`
+`cabal run PAB`
+
+## To run the simulator Trace
+
+Start the repl 
+
+`cabal repl`
+
+Load Proprty Sale Test
+
+`:l PropertySaleTest`
+
+Run the trace
+
+`runBoraTrace`
 
 ## Running the Web Client
 

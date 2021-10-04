@@ -30,8 +30,8 @@ import           PropertySale
 import           BoraMarket 
 
 
-runMyTrace :: IO ()
-runMyTrace = runEmulatorTraceIO' def emCfg myTrace
+runBoraTrace :: IO ()
+runBoraTrace = runEmulatorTraceIO' def emCfg myTrace
 
 emCfg :: EmulatorConfig
 emCfg = EmulatorConfig (Left $ Map.fromList [(Wallet w, v) | w <- [1 .. 4]]) def def
@@ -83,6 +83,9 @@ myTrace = do
 
                    callEndpoint @"Close" h2 ()
                    void $ Emulator.waitNSlots 2
+
+                   callEndpoint @"Buy Tokens" h4 50
+                   void $ Emulator.waitNSlots 5
 
 -------------------------------------------------------------
 

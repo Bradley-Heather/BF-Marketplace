@@ -14,26 +14,21 @@
 module BoraMarket where
 
 import           Control.Monad                hiding (fmap)
-import qualified Data.Map                     as Map
 import           Data.Aeson                   (FromJSON, ToJSON)
 import           Data.Monoid                  (Last (..))
 import           Data.Text                    (Text, pack)
 import           GHC.Generics                 (Generic)
-import           Prelude                      (Semigroup (..), Show (..))
+import           Prelude                      (Show (..))
 import qualified Prelude
 import qualified Schema
 
 import           Plutus.Contract              as Contract
-import           Plutus.Contract.StateMachine
 import           Plutus.Contracts.Currency    as Currency
 import qualified PlutusTx
 import           PlutusTx.Prelude             hiding (Semigroup(..), check, unless)
 
 import           Ledger                       hiding (singleton)
 import           Ledger.Ada                   as Ada
-import           Ledger.Constraints           as Constraints
-import qualified Ledger.Typed.Scripts         as Scripts
-import           Ledger.Value                 as Value
 
 data BoraMarket =
   BoraMarket
@@ -49,6 +44,10 @@ PlutusTx.makeLift ''BoraMarket
 lovelaces :: Value -> Integer
 lovelaces = Ada.getLovelace . Ada.fromValue
 
+{-# INLINABLE boraTokenName #-}
+boraTokenName :: TokenName
+boraTokenName = "Bora Token"
+
 data BoraMarketParams = 
   BoraMarketParams 
      { bmpListFee    :: !Integer 
@@ -58,8 +57,8 @@ data BoraMarketParams =
 startBoraMarket :: BoraMarketParams -> Contract (Last BoraMarket) s Text ()
 startBoraMarket bmp = do 
     pkh <- pubKeyHash <$> ownPubKey
-    osc <- mapError (pack . show) (mintContract pkh [("Bora Token", 1)] :: Contract w s CurrencyError OneShotCurrency)
-    let cs     = Currency.currencySymbol osc
+    nft <- mapError (pack . show) (mintContract pkh [(boraTokenName, 1)] :: Contract w s CurrencyError OneShotCurrency)
+    let cs     = Currency.currencySymbol nft
         bm = BoraMarket 
            { bmSymbol   = cs
            , bmOperator = pkh 

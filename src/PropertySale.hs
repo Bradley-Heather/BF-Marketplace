@@ -19,7 +19,7 @@ import           Data.Aeson                   (FromJSON, ToJSON)
 import           Data.Monoid                  (Last (..))
 import           Data.Text                    (Text, pack)
 import           GHC.Generics                 (Generic)
-import           Prelude                      (Semigroup (..), Show (..), (<$>))
+import           Prelude                      (Semigroup (..), Show (..), (<$>), String)
 import qualified Prelude
 import qualified Schema
 
@@ -109,15 +109,15 @@ transition ps s r = case (stateValue s, stateData s, r) of
                                    , State (Trade p) $ v                     <>
                                      lovelaceValueOf (negate f)
                                    )                               
-    (_, Trade _, Close)    -> Just ( Constraints.mustBeSignedBy (psSeller ps)
-                                   , State Finished mempty
-                                   )
     (v, Trade p, BuyTokens n)  
       | n > 0              -> Just ( Constraints.mustPayToPubKey (psOperator ps) (psOperatorSaleFee ps)
                                    , State (Trade p) $ v                     <> 
                                      assetClassValue (psToken ps) (negate n) <>
                                      lovelaceValueOf (n * p)
-                                   )                               
+                                   )
+    (_, Trade _, Close)    -> Just ( Constraints.mustBeSignedBy (psSeller ps)
+                                   , State Finished mempty
+                                   )                                                              
     _                      -> Nothing
 
 {-# INLINABLE final #-}
@@ -193,25 +193,37 @@ listProperty ps p = do
 withdrawTokens :: PropertySale -> TokenAmount -> Contract w s Text ()
 withdrawTokens ps n = do
       void $ mapErrorSM $ runStep (psClient ps) $ WithdrawTokens n 
-      if n > 0 then   
-        logInfo $ show n ++ " " ++ show (psName ps) ++ " tokens withdrawn" 
-      else logInfo $ "No " ++ show (psName ps) ++ " tokens withdrawn"
+      x <- mapErrorSM $ getOnChainState (psClient ps)
+      case x of 
+        Nothing -> logError @String "No sale found"
+        Just _ -> if n > 0 then   
+                  logInfo $ show n ++ " " ++ show (psName ps) ++ " tokens withdrawn" 
+                else logInfo $ "No " ++ show (psName ps) ++ " tokens withdrawn"
 
 withdrawFunds :: PropertySale -> FundsAmount -> Contract w s Text ()
 withdrawFunds ps f = do
       void $ mapErrorSM $ runStep (psClient ps) $ WithdrawFunds f
-      logInfo $ show f ++ " Funds withdrawn"
+      x <- mapErrorSM $ getOnChainState (psClient ps)
+      case x of 
+        Nothing -> logError @String "No sale found"
+        Just _ -> logInfo $ show f ++ " Funds withdrawn"
 
 close :: PropertySale -> Contract w s Text ()
 close ps = do
       void $ mapErrorSM $ runStep (psClient ps) Close 
-      logInfo $ show (psName ps) ++ " sale closed"
+      x <- mapErrorSM $ getOnChainState (psClient ps)
+      case x of 
+        Nothing -> logError @String "No sale found"
+        Just _ -> logInfo $ show (psName ps) ++ " sale closed"
 
 -- | Buyer Actions
 buyTokens :: PropertySale -> TokenAmount -> Contract w s Text ()
 buyTokens ps n = do 
       void $ mapErrorSM $ runStep (psClient ps) $ BuyTokens n
-      logInfo $ show n ++ " " ++ show (psName ps) ++ " tokens purchased"
+      x <- mapErrorSM $ getOnChainState (psClient ps)
+      case x of 
+        Nothing -> logError @String "No sale found"
+        Just _ -> logInfo $ show n ++ " " ++ show (psName ps) ++ " tokens purchased"
 
 ---------------------------------------
 {-
@@ -257,5 +269,5 @@ buyEndpoint ps = forever
                 $ awaitPromise
                 $ endpoint @"Buy Tokens" $ buyTokens ps
 
--- | To Do figure out how to incorporate funds check
+
 
