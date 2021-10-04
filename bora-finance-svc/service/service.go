@@ -14,7 +14,7 @@ import (
 	"github.com/hilgardvr/bora-finance-svc/models"
 )
 
-//todo move to db
+//todo - onchain state is simulated here, in future will need to sync with chain state 
 var properties 	[]models.PropertyDetails
 const URL = "localhost:9000/uploads/"
 

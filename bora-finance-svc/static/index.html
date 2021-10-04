@@ -83,26 +83,30 @@
     {{ end }}
 
     {{ if . }}
-    <div>
-        <h3>Buyer Space</h3>
-        <form enctype="multipart/form-data" action="/api/buy" method="POST">
-            <div>
-                <!-- <div>
-                    <label for="tokenName">Token name</label>
-                    <input id="tokenName" name="tokenName" type="text" value="BoraMansion">
-                </div> -->
+        {{ range . }}
+            {{ if and (gt .TokenPrice 0) (lt .TokensSold .NumTokens) }}
                 <div>
-                    <label for="buyAmount">Amount of tokens to buy</label>
-                    <input id="buyAmount" name="buyAmount" type="number" value="100">
+                    <h3>Buyer Space</h3>
+                    <form enctype="multipart/form-data" action="/api/buy" method="POST">
+                        <div>
+                            <!-- <div>
+                                <label for="tokenName">Token name</label>
+                                <input id="tokenName" name="tokenName" type="text" value="BoraMansion">
+                            </div> -->
+                            <div>
+                                <label for="buyAmount">Amount of tokens to buy</label>
+                                <input id="buyAmount" name="buyAmount" type="number" value="100">
+                            </div>
+                            <!-- <div>
+                                <label for="buyer">Buyer Number</label>
+                                <input id="buyer" name="buyer" type="number" value="2">
+                            </div> -->
+                        </div>
+                        <button type="submit" name="action">Buy</button>
+                    </form>
                 </div>
-                <!-- <div>
-                    <label for="buyer">Buyer Number</label>
-                    <input id="buyer" name="buyer" type="number" value="2">
-                </div> -->
-            </div>
-            <button type="submit" name="action">Buy</button>
-        </form>
-    </div>
+            {{ end }}
+        {{ end }}
     {{ end }}
 
     {{ if . }}
@@ -125,6 +129,7 @@
             <div>
                 <h5>Available Funds: <b id="fundAmount">{{ .SellerFunds }}</b></h5>
             </div>
+            {{ if gt .SellerFunds 0 }}
             <div>
                 <h5>Withdraw Funds</h5>
                 <form enctype="multipart/form-data" action="/api/withdrawFunds" method="POST">
@@ -141,6 +146,8 @@
                     <button type="submit" name="action">Withdraw Funds</button>
                 </form>
             </div>
+            {{ end }}
+            {{ if lt .TokensSold .NumTokens }}
             <div>
                 <h5>Withdraw Tokens</h5>
                 <form enctype="multipart/form-data" action="/api/withdrawTokens" method="POST">
@@ -157,6 +164,7 @@
                     <button type="submit" name="action">Withdraw Tokens</button>
                 </form>
             </div>
+            {{ end }}
             <div>
                 <h5>Close</h5>
                 <form enctype="multipart/form-data" action="/api/close" method="POST">
