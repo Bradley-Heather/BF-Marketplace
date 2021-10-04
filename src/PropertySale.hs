@@ -197,8 +197,8 @@ withdrawTokens ps n = do
       case x of 
         Nothing -> logError @String "No sale found"
         Just _ -> if n > 0 then   
-                  logInfo $ show n ++ " " ++ show (psName ps) ++ " tokens withdrawn" 
-                else logInfo $ "No " ++ show (psName ps) ++ " tokens withdrawn"
+                    logInfo $ show n ++ " " ++ show (psName ps) ++ " tokens withdrawn" 
+                  else logInfo $ "No " ++ show (psName ps) ++ " tokens withdrawn"
 
 withdrawFunds :: PropertySale -> FundsAmount -> Contract w s Text ()
 withdrawFunds ps f = do
