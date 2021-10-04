@@ -39,10 +39,6 @@ data BoraMarket =
     } deriving (Show, Generic, FromJSON, ToJSON, Prelude.Eq)
 
 PlutusTx.makeLift ''BoraMarket
-    
-{-# INLINABLE lovelaces #-}
-lovelaces :: Value -> Integer
-lovelaces = Ada.getLovelace . Ada.fromValue
 
 {-# INLINABLE boraTokenName #-}
 boraTokenName :: TokenName
