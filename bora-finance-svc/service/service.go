@@ -221,7 +221,13 @@ func handleResponseError(resp *http.Response) error {
 }
 
 func Close() error {
-	close()
+	resp := close()
+	if resp != nil && resp.StatusCode == http.StatusOK {
+		tokensLeft := properties[0].NumTokens - properties[0].TokensSold
+		properties[0].NumTokens -= tokensLeft
+	} else {
+		return handleResponseError(resp)
+	}
 	return nil
 }
 
