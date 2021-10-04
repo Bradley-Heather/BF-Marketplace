@@ -44,6 +44,10 @@ PlutusTx.makeLift ''BoraMarket
 lovelaces :: Value -> Integer
 lovelaces = Ada.getLovelace . Ada.fromValue
 
+{-# INLINABLE boraTokenName #-}
+boraTokenName :: TokenName
+boraTokenName = "Bora Token"
+
 data BoraMarketParams = 
   BoraMarketParams 
      { bmpListFee    :: !Integer 
@@ -53,8 +57,8 @@ data BoraMarketParams =
 startBoraMarket :: BoraMarketParams -> Contract (Last BoraMarket) s Text ()
 startBoraMarket bmp = do 
     pkh <- pubKeyHash <$> ownPubKey
-    osc <- mapError (pack . show) (mintContract pkh [("Bora Token", 1)] :: Contract w s CurrencyError OneShotCurrency)
-    let cs     = Currency.currencySymbol osc
+    nft <- mapError (pack . show) (mintContract pkh [(boraTokenName, 1)] :: Contract w s CurrencyError OneShotCurrency)
+    let cs     = Currency.currencySymbol nft
         bm = BoraMarket 
            { bmSymbol   = cs
            , bmOperator = pkh 
