@@ -28,7 +28,6 @@ import qualified PlutusTx
 import           PlutusTx.Prelude             hiding (Semigroup(..), check, unless)
 
 import           Ledger                       hiding (singleton)
-import           Ledger.Ada                   as Ada
 
 data BoraMarket =
   BoraMarket
