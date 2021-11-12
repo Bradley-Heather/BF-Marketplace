@@ -226,6 +226,7 @@ buyTokens ps n = do
         Just _ -> logInfo $ show n ++ " " ++ show (psName ps) ++ " tokens purchased"
 
 ---------------------------------------
+-- | Create a way to querry funds 
 {-
 checkBalance :: Contract w s Text ()
 checkBalance = do 
