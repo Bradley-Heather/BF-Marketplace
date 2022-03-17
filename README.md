@@ -92,3 +92,5 @@ Within the browser you can interact with the Marketplace
 - [ ] Property Price Oracle that references realworld property price data for secondary token market
 
 _A special thank you to Lars Brunjes as large amount of the Plutus code in this repository draws inspiration from and is heavely influenced by the Plutus Pioneer Program_ 
+
+Test Update
